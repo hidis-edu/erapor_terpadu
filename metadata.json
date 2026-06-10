@@ -1,0 +1,6 @@
+{
+  "name": "E-Rapor Guru",
+  "description": "Dashboard modern input nilai rapor dan penilaian kepribadian siswa SD Islam Hidayatul Islamiyah dengan grafik interaktif, ekspor PDF/Excel, dan riwayat nilai.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
