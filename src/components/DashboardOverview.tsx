@@ -292,8 +292,8 @@ export default function DashboardOverview({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
-                  {studentsNeedAttention.map((s) => (
-                    <tr key={s.id} className="text-xs">
+                  {studentsNeedAttention.map((s, idx) => (
+                    <tr key={`${s.id}-${idx}`} className="text-xs">
                       <td className="py-3 font-semibold text-slate-800">{s.nama}</td>
                       <td className="py-3 text-slate-500">{s.kelas}</td>
                       <td className="py-3 text-slate-500 font-medium">{s.mapel}</td>

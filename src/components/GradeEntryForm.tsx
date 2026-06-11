@@ -380,12 +380,12 @@ export default function GradeEntryForm({
 
             {studentGradesHistory.length > 0 ? (
               <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
-                {studentGradesHistory.map((item) => {
+                {studentGradesHistory.map((item, idx) => {
                   const mapelNama = subjectNameMap[item.idpelajaran] || `Mata Pelajaran ID: ${item.idpelajaran}`;
                   const pass = item.nilaiakhir >= item.kkm;
                   return (
                     <div 
-                      key={item.idpelajaran} 
+                      key={`${item.idpelajaran}-${idx}`} 
                       className="border border-slate-100 rounded-xl p-3 hover:bg-slate-50 transition-all flex flex-col gap-2 bg-white"
                     >
                       <div className="flex items-start justify-between">

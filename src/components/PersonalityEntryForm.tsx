@@ -379,9 +379,9 @@ export default function PersonalityEntryForm({
 
         {personalities.length > 0 ? (
           <div className="space-y-3 max-h-120 overflow-y-auto pr-1">
-            {personalities.map((item) => (
+            {personalities.map((item, idx) => (
               <div 
-                key={item.nis} 
+                key={`${item.nis}-${idx}`} 
                 className="border border-slate-100 rounded-xl p-3.5 hover:bg-slate-50 transition-all flex flex-col gap-2.5 bg-white"
               >
                 <div className="flex items-start justify-between">

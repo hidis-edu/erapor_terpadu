@@ -464,7 +464,7 @@ export default function AttendanceEntryForm({
           <div className="space-y-3 max-h-120 overflow-y-auto pr-1">
             {attendances.map((item, idx) => (
               <div 
-                key={item.replid || idx} 
+                key={`${item.replid || 'att'}-${idx}`} 
                 className="border border-slate-100 rounded-xl p-3.5 hover:bg-slate-50/70 transition-all flex flex-col gap-2.5 bg-white shadow-xs"
               >
                 <div className="flex items-start justify-between">

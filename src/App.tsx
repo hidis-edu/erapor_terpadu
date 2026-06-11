@@ -36,6 +36,7 @@ export default function App() {
   const [grades, setGrades] = useState<Grade[]>([]);
   const [personalities, setPersonalities] = useState<Personality[]>([]);
   const [attendances, setAttendances] = useState<Attendance[]>([]);
+  const [activeClasses, setActiveClasses] = useState<any[]>([]);
 
   // Notification Toast state
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -100,6 +101,19 @@ export default function App() {
       setAttendances([]);
     }
 
+    // Load Active Classes list cached
+    const storedActiveClasses = localStorage.getItem('activeClasses');
+    if (storedActiveClasses) {
+      try {
+        const parsedCls = JSON.parse(storedActiveClasses);
+        setActiveClasses(parsedCls);
+      } catch (e) {
+        setActiveClasses([]);
+      }
+    } else {
+      setActiveClasses([]);
+    }
+
     setIsLoading(false);
   }, []);
 
@@ -113,7 +127,18 @@ export default function App() {
         if (response.ok) {
           const list = await response.json();
           if (Array.isArray(list) && list.length > 0) {
-            setStudents(list);
+            // Deduplicate student records by unique NIS
+            const seenNis = new Set<string>();
+            const uniqueStudents = list.filter((s: any) => {
+              if (!s || !s.nis) return false;
+              const nisStr = String(s.nis).trim();
+              if (seenNis.has(nisStr)) {
+                return false;
+              }
+              seenNis.add(nisStr);
+              return true;
+            });
+            setStudents(uniqueStudents);
             setIsLoadingStudents(false);
             return;
           }
@@ -220,10 +245,33 @@ export default function App() {
       setIsLoadingAttendances(false);
     }
 
+    async function loadActiveClassesApi() {
+      try {
+        const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'https://fastify.nganjuk.net';
+        const response = await fetch(`${apiBaseUrl}/api/jbsakad/kelas/aktif`);
+        if (response.ok) {
+          const result = await response.json();
+          if (Array.isArray(result)) {
+            setActiveClasses(result);
+            localStorage.setItem('activeClasses', JSON.stringify(result));
+          } else if (result && Array.isArray(result.data)) {
+            setActiveClasses(result.data);
+            localStorage.setItem('activeClasses', JSON.stringify(result.data));
+          } else if (result && result.status === 'sukses' && Array.isArray(result.data)) {
+            setActiveClasses(result.data);
+            localStorage.setItem('activeClasses', JSON.stringify(result.data));
+          }
+        }
+      } catch (e) {
+        console.warn('API down/cors issue for Active Classes.', e);
+      }
+    }
+
     loadStudentsApi();
     loadGradesApi();
     loadPersonalitiesApi();
     loadAttendancesApi();
+    loadActiveClassesApi();
   }, []);
 
   // 3. Database operations
@@ -672,6 +720,7 @@ export default function App() {
                 students={students}
                 subjects={subjects}
                 attendances={attendances}
+                activeClasses={activeClasses}
                 addToast={addToast}
               />
             )}

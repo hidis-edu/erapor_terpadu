@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { 
   Search, FileSpreadsheet, FileText, Printer, Filter, X, 
@@ -13,6 +13,7 @@ interface ReportsCenterProps {
   students: Student[];
   subjects: Subject[];
   attendances: Attendance[];
+  activeClasses: any[];
   addToast: (message: string, type: 'success' | 'error') => void;
 }
 
@@ -22,16 +23,54 @@ export default function ReportsCenter({
   students,
   subjects,
   attendances,
+  activeClasses,
   addToast
 }: ReportsCenterProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedClass, setSelectedClass] = useState('');
   const [selectedSubjectId, setSelectedSubjectId] = useState('');
   
+  // Real-time fetched Wali Kelas information
+  const [loadedWali, setLoadedWali] = useState<{ nama: string; NIP: string } | null>(null);
+  const [lastFetchedNip, setLastFetchedNip] = useState<string>('');
+
   // Modal for direct printing of report cards
   const [printModalOpen, setPrintModalOpen] = useState(false);
   const [printNis, setPrintNis] = useState('');
   const [printSelectedClass, setPrintSelectedClass] = useState('');
+
+  // Auto-trigger printing from URL query parameters (flawless print in new tab)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const qNis = params.get('print-nis');
+    const qClass = params.get('print-class');
+    if (qNis) {
+      setPrintNis(qNis);
+      if (qClass) {
+        setPrintSelectedClass(qClass);
+      }
+      setPrintModalOpen(true);
+      
+      const timer = setTimeout(() => {
+        try {
+          window.focus();
+          window.print();
+        } catch (e) {
+          console.warn('Auto print failed to launch', e);
+        }
+      }, 1200);
+      return () => clearTimeout(timer);
+    }
+  }, [students]);
+
+  const activePrintStudent = useMemo(() => {
+    return students.find(s => s.nis === printNis);
+  }, [printNis, students]);
+
+  const printUrl = useMemo(() => {
+    if (!activePrintStudent) return '#';
+    return `${window.location.origin}${window.location.pathname}?print-nis=${activePrintStudent.nis}&print-class=${activePrintStudent.kelas}`;
+  }, [activePrintStudent]);
 
   // 1. Get list of classes and subjects for filtering
   const classesList = useMemo(() => {
@@ -126,10 +165,6 @@ export default function ReportsCenter({
     return printableList.filter(s => s.kelas === printSelectedClass);
   }, [printableList, printSelectedClass]);
 
-  const activePrintStudent = useMemo(() => {
-    return students.find(s => s.nis === printNis);
-  }, [printNis, students]);
-
   const activePrintGrades = useMemo(() => {
     return grades.filter(g => g.nis === printNis);
   }, [printNis, grades]);
@@ -141,6 +176,113 @@ export default function ReportsCenter({
   const activePrintAttendance = useMemo(() => {
     return attendances.find(a => a.nis === printNis);
   }, [printNis, attendances]);
+
+  const resolvedWaliKelas = useMemo(() => {
+    if (loadedWali) {
+      return loadedWali;
+    }
+    if (activePrintStudent && activePrintStudent.kelas) {
+      const cleanClass = String(activePrintStudent.kelas).replace(/\s+/g, '').toUpperCase();
+      const found = (activeClasses || []).find((c: any) => {
+        if (!c) return false;
+        const cName = String(c.kelas || c.idkelas || c.nama || '').replace(/\s+/g, '').toUpperCase();
+        return cName === cleanClass || cName.includes(cleanClass) || cleanClass.includes(cName);
+      });
+      if (found) {
+        const nip = found.nipwali || found.nipwalikelas || found.nip_walikelas || found.nip || found.idwalikelas || found.nip_wali_kelas || found.idguru || found.nik || found.guru_nip || found.wali_nip;
+        const nama = found.walikelas || found.wali || found.nama_walikelas || found.nama_guru || found.nama || found.guru;
+        return {
+          nama: nama ? String(nama).trim().toUpperCase() : 'MEMUAT PROFILE GURU...',
+          NIP: nip ? String(nip).trim() : '-'
+        };
+      }
+    }
+    return { nama: 'WALI KELAS', NIP: '-' };
+  }, [activePrintStudent, activeClasses, loadedWali]);
+
+  useEffect(() => {
+    if (!activePrintStudent || !activePrintStudent.kelas) {
+      setLoadedWali(null);
+      setLastFetchedNip('');
+      return;
+    }
+
+    const cleanClass = String(activePrintStudent.kelas).replace(/\s+/g, '').toUpperCase();
+    const found = (activeClasses || []).find((c: any) => {
+      if (!c) return false;
+      const cName = String(c.kelas || c.idkelas || c.nama || '').replace(/\s+/g, '').toUpperCase();
+      return cName === cleanClass || cName.includes(cleanClass) || cleanClass.includes(cName);
+    });
+
+    const nip = found ? (
+      found.nipwali ||
+      found.nipwalikelas || 
+      found.nip_walikelas || 
+      found.nip || 
+      found.idwalikelas || 
+      found.nip_wali_kelas || 
+      found.idguru || 
+      found.nik || 
+      found.guru_nip || 
+      found.wali_nip
+    ) : null;
+
+    if (!nip) {
+      setLoadedWali({ nama: 'WALI KELAS', NIP: '-' });
+      setLastFetchedNip('');
+      return;
+    }
+
+    const nipStr = String(nip).trim();
+    if (nipStr === lastFetchedNip) {
+      return;
+    }
+
+    setLastFetchedNip(nipStr);
+    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'https://fastify.nganjuk.net';
+    
+    // Set placeholder first with NIP so it shows immediately
+    const cachedNama = found ? (found.walikelas || found.wali || found.nama_walikelas || found.nama_guru || found.nama || found.guru) : '';
+    setLoadedWali({
+      nama: cachedNama ? String(cachedNama).trim().toUpperCase() : 'SEDANG MEMUAT...',
+      NIP: nipStr
+    });
+
+    fetch(`${apiBaseUrl}/api/jbssdm/pegawai/${nipStr}`)
+      .then(async (res) => {
+        if (res.ok) {
+          const body = await res.json();
+          let rawData = body;
+          if (body && body.data !== undefined && body.data !== null) {
+            rawData = body.data;
+          } else if (body && body.status === 'sukses' && body.data) {
+            rawData = body.data;
+          }
+
+          let fetchedNama = '';
+          let gelar = '';
+          if (Array.isArray(rawData) && rawData.length > 0) {
+            const item = rawData[0];
+            fetchedNama = item.nama || item.nama_pegawai || item.nama_lengkap || item.nama_guru || item.nama || item.nama_walikelas || item.wali;
+            gelar = item.gelarakhir || '';
+          } else if (rawData) {
+            fetchedNama = rawData.nama || rawData.nama_pegawai || rawData.nama_lengkap || rawData.nama_guru || rawData.nama || rawData.nama_walikelas || rawData.wali;
+            gelar = rawData.gelarakhir || '';
+          }
+
+          if (fetchedNama) {
+            const cleanGelar = gelar ? `, ${gelar}` : '';
+            setLoadedWali({
+              nama: `${String(fetchedNama).trim()}${cleanGelar}`.toUpperCase(),
+              NIP: nipStr
+            });
+          }
+        }
+      })
+      .catch((err) => {
+        console.warn('Pegawai fetch failed', err);
+      });
+  }, [activePrintStudent, activeClasses, lastFetchedNip]);
 
   const totalNilai = useMemo(() => {
     return activePrintGrades.reduce((sum, g) => sum + g.nilaiakhir, 0);
@@ -168,9 +310,15 @@ export default function ReportsCenter({
       addToast('Luncurkan siswa terlebih dahulu untuk dicetak!', 'error');
       return;
     }
-    // Simple window action which lets them print cleanly
+    // Simple window action which lets them print cleanly with fallback parent focusing
     setTimeout(() => {
-      window.print();
+      try {
+        window.focus();
+        window.print();
+      } catch (err) {
+        console.warn('Standard frame window.print failed, trying direct root query', err);
+        window.print();
+      }
     }, 300);
   };
 
@@ -281,7 +429,7 @@ export default function ReportsCenter({
                 {filteredGrades.map((g, idx) => {
                   const s = studentMap[g.nis];
                   return (
-                    <tr key={`${g.nis}-${g.idpelajaran}`} className="hover:bg-slate-50/50 text-xs transition-all">
+                    <tr key={`${g.nis}-${g.idpelajaran}-${idx}`} className="hover:bg-slate-50/50 text-xs transition-all bg-white font-medium text-slate-700">
                       <td className="py-3 px-6">
                         <div className="font-bold text-slate-800">{s?.nama || 'N/A'}</div>
                         <div className="text-[10px] text-slate-400 mt-0.5 font-mono">NIS: {g.nis}</div>
@@ -402,6 +550,10 @@ export default function ReportsCenter({
                         <p>Lembar cetak pas di ukuran kertas <strong>Legal / F4 (21.5cm x 33cm)</strong>.</p>
                         <p>Pilih orientasi <strong>Portrait</strong> dan atur margin ke <strong>Minimum / Default</strong> di dialog print.</p>
                       </div>
+                      <div className="text-[9.5px] text-amber-800 bg-amber-50 p-2.5 rounded-lg border border-amber-200 leading-relaxed font-bold space-y-1">
+                        <p className="font-extrabold text-amber-950 flex items-center gap-1">⚠️ Tips Cetak Lancar & Simpan PDF:</p>
+                        <p className="font-semibold text-amber-900">Chrome memblokir popup print di dalam frame/preview ini. Harap klik tombol hijau <span className="font-extrabold">"BUKA TAB BARU & CETAK PDF"</span> di bawah. Ini akan otomatis membuka tab mandiri dan memunculkan dialog pencetakan/simpan PDF secara instan & lancar!</p>
+                      </div>
                     </div>
                   ) : (
                     <div className="text-center py-6 bg-slate-50 rounded-xl text-xs text-slate-400 border border-dashed border-slate-200">
@@ -409,21 +561,34 @@ export default function ReportsCenter({
                     </div>
                   )}
 
-                  <div className="flex gap-2.5 pt-2">
-                    <button
-                      onClick={() => { setPrintModalOpen(false); setPrintNis(''); setPrintSelectedClass(''); }}
-                      className="flex-1 py-2.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-600 rounded-xl text-xs font-bold transition-all cursor-pointer text-center"
-                    >
-                      Tutup
-                    </button>
-                    <button
-                      onClick={handleTriggerPrint}
-                      disabled={!printNis}
-                      className="flex-1 py-2.5 bg-slate-900 hover:bg-slate-800 text-white disabled:opacity-55 disabled:cursor-not-allowed rounded-xl text-xs font-bold transition-all cursor-pointer font-semibold shadow-md inline-flex items-center justify-center gap-1.5 animate-pulse"
-                    >
-                      <Printer className="w-4 h-4" />
-                      <span>Mulai Cetak</span>
-                    </button>
+                  <div className="flex flex-col gap-2 pt-2">
+                    {printNis && activePrintStudent && (
+                      <a
+                        href={printUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full py-3 bg-[#407655] hover:bg-[#325c42] text-white text-center rounded-xl text-xs font-bold transition-all cursor-pointer shadow-md flex items-center justify-center gap-1.5 font-black hover:scale-[1.01]"
+                      >
+                        <Printer className="w-4 h-4" />
+                        <span>BUKA TAB BARU & CETAK PDF</span>
+                      </a>
+                    )}
+                    <div className="flex gap-2 w-full">
+                      <button
+                        onClick={() => { setPrintModalOpen(false); setPrintNis(''); setPrintSelectedClass(''); }}
+                        className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer text-center border border-slate-200 animate-none"
+                      >
+                        Tutup
+                      </button>
+                      <button
+                        onClick={handleTriggerPrint}
+                        disabled={!printNis}
+                        className="flex-1 py-2 bg-slate-900 hover:bg-slate-800 text-white disabled:opacity-55 disabled:cursor-not-allowed rounded-xl text-xs font-bold transition-all cursor-pointer inline-flex items-center justify-center gap-1.5 mt-0"
+                      >
+                        <Printer className="w-3.5 h-3.5" />
+                        <span>Cetak Langsung</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -437,23 +602,23 @@ export default function ReportsCenter({
                   </div>
 
                   {/* Document preview block wrapping actual printable layout */}
-                  <div className="bg-white p-6 border-[3px] border-[#4a6b53] text-[10px] text-black font-sans shadow-lg mx-auto w-full max-w-[650px] flex flex-col justify-between" style={{ minHeight: '820px' }}>
+                  <div className="bg-white p-4.5 border-[3px] border-[#4a6b53] text-[10px] text-black font-sans shadow-lg mx-auto w-full max-w-[650px] flex flex-col justify-between" style={{ minHeight: '800px' }}>
                     <div>
                       {/* Heading */}
-                      <div className="text-center font-bold tracking-normal mb-3 border-b-2 border-slate-300 pb-1.5">
+                      <div className="text-center font-bold tracking-normal mb-2 border-b border-slate-200 pb-1">
                         <h1 className="text-xs font-extrabold text-slate-900 uppercase">
                           RAPOR PENILAIAN SUMATIF AKHIR SEMESTER II
                         </h1>
-                        <h2 className="text-[10px] font-bold text-slate-900 uppercase mt-0.5">
+                        <h2 className="text-[9.5px] font-bold text-slate-900 uppercase mt-0.5">
                           TERPADU
                         </h2>
-                        <h3 className="text-[10px] font-bold text-slate-900 uppercase mt-0.5">
+                        <h3 className="text-[9.5px] font-bold text-slate-900 uppercase mt-0.5">
                           SDI HIDAYATUL ISLAMIYAH
                         </h3>
                       </div>
 
                       {/* Header table */}
-                      <div className="grid grid-cols-2 gap-4 text-[9px] text-slate-900 pb-2 border-b border-slate-200 mb-3 block">
+                      <div className="grid grid-cols-2 gap-2 text-[9px] text-slate-900 pb-1.5 border-b border-slate-200 mb-2 block">
                         <div className="space-y-0.5">
                           <div className="flex">
                             <span className="w-16 shrink-0 font-medium">Nama Siswa</span>
@@ -497,54 +662,54 @@ export default function ReportsCenter({
                       <table className="w-full text-left border-collapse border border-slate-800 text-[9px] text-slate-900">
                         <thead className="bg-[#f8fafc] font-bold text-center">
                           <tr>
-                            <th className="border border-slate-800 py-1 px-1 w-[5%]">NO</th>
-                            <th className="border border-slate-800 py-1 px-2 text-left w-[35%]">MATA PELAJARAN</th>
-                            <th className="border border-slate-800 py-1 px-1 w-[10%]">KKM</th>
-                            <th className="border border-slate-800 py-1 px-1 w-[12%]">
+                            <th className="border border-slate-800 py-0.5 px-1 w-[5%]">NO</th>
+                            <th className="border border-slate-800 py-0.5 px-2 text-left w-[35%]">MATA PELAJARAN</th>
+                            <th className="border border-slate-800 py-0.5 px-1 w-[10%]">KKM</th>
+                            <th className="border border-slate-800 py-0.5 px-1 w-[12%]">
                               <div>NILAI</div>
                               <div>ANGKA</div>
                             </th>
-                            <th className="border border-slate-800 py-1 px-2 text-left w-[28%]">NILAI HURUF</th>
-                            <th className="border border-slate-800 py-1 px-1 w-[10%]">PREDIKAT</th>
+                            <th className="border border-slate-800 py-0.5 px-2 text-left w-[28%]">NILAI HURUF</th>
+                            <th className="border border-slate-800 py-0.5 px-1 w-[10%]">PREDIKAT</th>
                           </tr>
                         </thead>
                         <tbody>
                           {activePrintGrades.map((g, idx) => (
-                            <tr key={g.idpelajaran} className="text-center">
-                              <td className="border border-slate-800 py-1 px-1 text-center">{idx + 1}</td>
-                              <td className="border border-slate-800 py-1 px-2 text-left font-extrabold">{subjectMap[g.idpelajaran] || `ID: ${g.idpelajaran}`}</td>
-                              <td className="border border-slate-800 py-1 px-1 text-center">{g.kkm}</td>
-                              <td className="border border-slate-800 py-1 px-1 text-center font-bold">{g.nilaiakhir}</td>
-                              <td className="border border-slate-800 py-1 px-2 text-left text-[8px] capitalize">{g.nilaihuruf || numberToWords(g.nilaiakhir)}</td>
-                              <td className="border border-slate-800 py-1 px-1 text-center font-bold">{g.predikat}</td>
+                            <tr key={`${g.idpelajaran}-${idx}`} className="text-center">
+                              <td className="border border-slate-800 py-0.5 px-1 text-center">{idx + 1}</td>
+                              <td className="border border-slate-800 py-0.5 px-2 text-left font-extrabold">{subjectMap[g.idpelajaran] || `ID: ${g.idpelajaran}`}</td>
+                              <td className="border border-slate-800 py-0.5 px-1 text-center">{g.kkm}</td>
+                              <td className="border border-slate-800 py-0.5 px-1 text-center font-bold">{g.nilaiakhir}</td>
+                              <td className="border border-slate-800 py-0.5 px-2 text-left text-[8px] capitalize">{g.nilaihuruf || numberToWords(g.nilaiakhir)}</td>
+                              <td className="border border-slate-800 py-0.5 px-1 text-center font-bold">{g.predikat}</td>
                             </tr>
                           ))}
                           {activePrintGrades.length === 0 && (
                             <tr>
-                              <td colSpan={6} className="border border-slate-800 py-4 text-center text-slate-400 italic">
+                              <td colSpan={6} className="border border-slate-800 py-3 text-center text-slate-400 italic">
                                 Belum ada nilai akademik terdata untuk siswa ini.
                               </td>
                             </tr>
                           )}
                           <tr className="bg-slate-50/20 font-bold">
-                            <td colSpan={3} className="border border-slate-800 py-1 px-2 text-left uppercase text-[9px]">JUMLAH</td>
-                            <td className="border border-slate-800 py-1 px-1 text-center text-[9px] font-extrabold">{totalNilai}</td>
-                            <td colSpan={2} className="border border-slate-800 py-1 px-2"></td>
+                            <td colSpan={3} className="border border-slate-800 py-0.5 px-2 text-left uppercase text-[9px]">JUMLAH</td>
+                            <td className="border border-slate-800 py-0.5 px-1 text-center text-[9px] font-extrabold">{totalNilai}</td>
+                            <td colSpan={2} className="border border-slate-800 py-0.5 px-2"></td>
                           </tr>
                           <tr className="bg-slate-50/20 font-bold">
-                            <td colSpan={3} className="border border-slate-800 py-1 px-2 text-left uppercase text-[9px]">RATA-RATA</td>
-                            <td className="border border-slate-800 py-1 px-1 text-center text-[9px] font-extrabold">{averageNilaiStr}</td>
-                            <td colSpan={2} className="border border-slate-800 py-1 px-2"></td>
+                            <td colSpan={3} className="border border-slate-800 py-0.5 px-2 text-left uppercase text-[9px]">RATA-RATA</td>
+                            <td className="border border-slate-800 py-0.5 px-1 text-center text-[9px] font-extrabold">{averageNilaiStr}</td>
+                            <td colSpan={2} className="border border-slate-800 py-0.5 px-2"></td>
                           </tr>
                           <tr className="bg-slate-100/50 font-extrabold">
-                            <td colSpan={3} className="border border-slate-800 py-1 px-2 text-left uppercase text-[9px]">KUALIFIKASI NILAI</td>
-                            <td colSpan={3} className="border border-slate-800 py-1 px-2 text-center text-[9px] font-black text-[#407655]">{kualifikasiNilai}</td>
+                            <td colSpan={3} className="border border-slate-800 py-0.5 px-2 text-left uppercase text-[9px]">KUALIFIKASI NILAI</td>
+                            <td colSpan={3} className="border border-slate-800 py-0.5 px-2 text-center text-[9px] font-black text-[#407655]">{kualifikasiNilai}</td>
                           </tr>
                         </tbody>
                       </table>
 
                       {/* Catatan Area */}
-                      <div className="border border-slate-800 p-2 mt-2.5 min-h-[3rem]">
+                      <div className="border border-slate-800 p-1.5 mt-2 min-h-[2.5rem]">
                         <div className="font-bold text-[9px]">Catatan :</div>
                         <div className="italic text-[9px] mt-0.5 text-slate-850 font-medium">
                           {activePrintPersonality?.catatan || 'perhatikan untuk lebih berdisiplin'}
@@ -552,12 +717,12 @@ export default function ReportsCenter({
                       </div>
 
                       {/* Promotion line */}
-                      <div className="mt-2 text-[9px]">
+                      <div className="mt-1.5 text-[9px]">
                         <span className="font-extrabold">Naik kelas / <span className="line-through">Tinggal kelas</span></span>
                       </div>
 
                       {/* Double charts box */}
-                      <div className="flex justify-between items-stretch gap-4 mt-2.5">
+                      <div className="flex justify-between items-stretch gap-4 mt-2">
                         {/* Attendance & Personality */}
                         <div className="w-[48%] space-y-2">
                           <div>
@@ -629,34 +794,34 @@ export default function ReportsCenter({
                     </div>
 
                     {/* Signatures */}
-                    <div className="mt-4 text-[8px] pt-1.5 border-t border-dashed border-slate-200">
-                      <div className="flex justify-between">
-                        <div></div>
+                    <div className="mt-3 text-[8px] pt-1 border-t border-dashed border-slate-200">
+                      {/* First row of signatures */}
+                      <div className="flex justify-between items-start">
+                        <div className="text-center w-40">
+                          <p>Mengetahui,</p>
+                          <p className="font-bold">Orang Tua Wali</p>
+                        </div>
                         <div className="text-center w-40">
                           <p>Jakarta, 2 Juni 2026</p>
                           <p className="font-bold">Guru Terpadu {activePrintStudent.kelas}</p>
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-3 text-center mt-3 gap-2">
-                        <div className="flex flex-col justify-between min-h-[45px]">
-                          <div>
-                            <p>Mengetahui,</p>
-                            <p className="font-bold">Orang Tua Wali</p>
-                          </div>
-                          <p className="mt-5 text-slate-400">.......................................................</p>
+                      {/* Second row showing name/dots for the first row of signatures */}
+                      <div className="flex justify-between items-end mt-4">
+                        <div className="text-center w-40">
+                          <p className="text-slate-400">.......................................................</p>
                         </div>
+                        <div className="text-center w-40">
+                          <p className="font-extrabold underline uppercase text-slate-800">{resolvedWaliKelas.nama}</p>
+                        </div>
+                      </div>
 
-                        <div className="flex flex-col justify-end min-h-[45px]">
-                          <p className="font-bold mb-2">Mengetahui,</p>
-                          <p className="font-bold">Kepala Sekolah</p>
-                          <p className="font-extrabold underline mt-5 uppercase text-slate-800">SITI MUNIROH, S.Pd.I., M.M</p>
-                        </div>
-
-                        <div className="flex flex-col justify-end min-h-[45px]">
-                          <div></div>
-                          <p className="font-extrabold underline uppercase mt-5 text-slate-800">FATRA TSAURAH NISA, S.Pd</p>
-                        </div>
+                      {/* Third row: Kepala Sekolah Centered at the bottom */}
+                      <div className="text-center mt-2.5">
+                        <p className="font-bold">Mengetahui,</p>
+                        <p className="font-bold">Kepala Sekolah</p>
+                        <p className="font-extrabold underline mt-3.5 uppercase text-slate-800 animate-none">SITI MUNIROH, S.Pd.I., M.M</p>
                       </div>
                     </div>
                   </div>
@@ -669,7 +834,7 @@ export default function ReportsCenter({
 
       {/* OFFLINE EMBEDDED PRINT VIEW: RENDERED EXCLUSIVELY ON SYSTEM PRINT SESSION (@media print) */}
       {printNis && activePrintStudent && (
-        <div className="print-only hidden p-8 bg-white text-black font-sans" style={{ width: '100%', maxWidth: '215mm', margin: '0 auto' }}>
+        <div className="print-only hidden p-4 bg-white text-black font-sans" style={{ width: '100%', maxWidth: '210mm', margin: '0 auto' }}>
           {/* Inject a raw style block to specify exact print page size and margin and hide scrollbars */}
           <style dangerouslySetInnerHTML={{__html: `
             @media print {
@@ -683,7 +848,7 @@ export default function ReportsCenter({
               }
               @page {
                 size: legal portrait;
-                margin: 1.0cm 1.2cm !important;
+                margin: 0.5cm 0.8cm !important;
               }
               .no-print {
                 display: none !important;
@@ -695,28 +860,28 @@ export default function ReportsCenter({
           `}} />
 
           {/* Elegant Outer Border framing the report sheet, matching the green look from PDF */}
-          <div className="border-[3px] border-[#4a6b53] p-8 bg-white min-h-[1100px] flex flex-col justify-between" style={{ boxSizing: 'border-box' }}>
+          <div className="border-[3px] border-[#4a6b53] p-4 bg-white flex flex-col justify-between" style={{ boxSizing: 'border-box', minHeight: '280mm' }}>
             <div>
               {/* Heading */}
-              <div className="text-center tracking-normal mb-6 border-b-2 border-slate-300 pb-3">
-                <h1 className="text-xl font-bold text-black uppercase leading-tight">
+              <div className="text-center tracking-normal mb-2 border-b border-black pb-1">
+                <h1 className="text-sm font-black text-black uppercase leading-tight">
                   RAPOR PENILAIAN SUMATIF AKHIR SEMESTER II
                 </h1>
-                <h2 className="text-base font-bold text-black uppercase mt-1">
+                <h2 className="text-[10px] font-bold text-black uppercase mt-0.5">
                   TERPADU
                 </h2>
-                <h3 className="text-base font-bold text-black uppercase mt-1">
+                <h3 className="text-[10px] font-bold text-black uppercase mt-0.5">
                   SDI HIDAYATUL ISLAMIYAH
                 </h3>
               </div>
 
               {/* Student info grid */}
-              <div className="grid grid-cols-2 gap-8 text-[11px] text-black pb-4 border-b border-black mb-6">
-                <div className="space-y-1.5">
+              <div className="grid grid-cols-2 gap-2 text-[9.5px] text-black pb-1 border-b border-black mb-2">
+                <div className="space-y-0.5">
                   <div className="flex">
                     <span className="w-24 shrink-0 font-medium">Nama Siswa</span>
                     <span className="mr-2">:</span>
-                    <span className="font-bold uppercase">{activePrintStudent.nama}</span>
+                    <span className="font-extrabold uppercase">{activePrintStudent.nama}</span>
                   </div>
                   <div className="flex">
                     <span className="w-24 shrink-0 font-medium">No. Induk</span>
@@ -732,7 +897,7 @@ export default function ReportsCenter({
                   </div>
                 </div>
 
-                <div className="space-y-1.5">
+                <div className="space-y-0.5">
                   <div className="flex">
                     <span className="w-32 shrink-0 font-medium">Kelas</span>
                     <span className="mr-2">:</span>
@@ -752,91 +917,91 @@ export default function ReportsCenter({
               </div>
 
               {/* Grades Table */}
-              <table className="w-full text-left border-collapse border-2 border-black text-[11px] text-black mb-4">
+              <table className="w-full text-left border-collapse border-2 border-black text-[9.5px] text-black mb-1.5">
                 <thead className="bg-[#f8fafc] font-bold text-center">
                   <tr>
-                    <th className="border border-black py-2 px-1 w-[5%] font-bold">NO</th>
-                    <th className="border border-black py-2 px-3 text-left w-[35%] font-bold">MATA PELAJARAN</th>
-                    <th className="border border-black py-2 px-1 w-[10%] font-bold">KKM</th>
-                    <th className="border border-black py-2 px-1 w-[12%] font-bold">
+                    <th className="border border-black py-0.5 px-1 w-[5%] font-bold">NO</th>
+                    <th className="border border-black py-0.5 px-2 text-left w-[35%] font-bold">MATA PELAJARAN</th>
+                    <th className="border border-black py-0.5 px-1 w-[10%] font-bold">KKM</th>
+                    <th className="border border-black py-0.5 px-1 w-[12%] font-bold">
                       <div>NILAI</div>
                       <div>ANGKA</div>
                     </th>
-                    <th className="border border-black py-2 px-3 text-left w-[28%] font-bold">NILAI HURUF</th>
-                    <th className="border border-black py-2 px-1 w-[10%] font-bold">PREDIKAT</th>
+                    <th className="border border-black py-0.5 px-2 text-left w-[28%] font-bold">NILAI HURUF</th>
+                    <th className="border border-black py-0.5 px-1 w-[10%] font-bold">PREDIKAT</th>
                   </tr>
                 </thead>
                 <tbody>
                   {activePrintGrades.map((g, idx) => (
-                    <tr key={g.idpelajaran} className="text-center">
-                      <td className="border border-black py-2 px-1 text-center">{idx + 1}</td>
-                      <td className="border border-black py-2 px-3 text-left font-bold">{subjectMap[g.idpelajaran] || `ID: ${g.idpelajaran}`}</td>
-                      <td className="border border-black py-2 px-1 text-center">{g.kkm}</td>
-                      <td className="border border-black py-2 px-1 text-center font-bold">{g.nilaiakhir}</td>
-                      <td className="border border-black py-2 px-3 text-left text-[10px] capitalize font-medium">{g.nilaihuruf || numberToWords(g.nilaiakhir)}</td>
-                      <td className="border border-black py-2 px-1 text-center font-bold">{g.predikat}</td>
+                    <tr key={`${g.idpelajaran}-${idx}`} className="text-center animate-none">
+                      <td className="border border-black py-0.5 px-1 text-center">{idx + 1}</td>
+                      <td className="border border-black py-0.5 px-2 text-left font-extrabold">{subjectMap[g.idpelajaran] || `ID: ${g.idpelajaran}`}</td>
+                      <td className="border border-black py-0.5 px-1 text-center">{g.kkm}</td>
+                      <td className="border border-black py-0.5 px-1 text-center font-extrabold">{g.nilaiakhir}</td>
+                      <td className="border border-black py-0.5 px-2 text-left text-[9px] capitalize font-medium">{g.nilaihuruf || numberToWords(g.nilaiakhir)}</td>
+                      <td className="border border-black py-0.5 px-1 text-center font-bold">{g.predikat}</td>
                     </tr>
                   ))}
                   {activePrintGrades.length === 0 && (
                     <tr>
-                      <td colSpan={6} className="border border-black py-6 text-center text-slate-400 italic font-bold">
+                      <td colSpan={6} className="border border-black py-3 text-center text-slate-400 italic font-bold animate-none">
                         Belum ada nilai akademik terdata untuk siswa ini.
                       </td>
                     </tr>
                   )}
-                  <tr>
-                    <td colSpan={3} className="border-2 border-black py-2 px-3 font-bold text-left uppercase">JUMLAH</td>
-                    <td className="border-2 border-black py-2 px-1 text-center font-bold">{totalNilai}</td>
-                    <td colSpan={2} className="border-2 border-black py-2 px-3"></td>
+                  <tr className="animate-none">
+                    <td colSpan={3} className="border-2 border-black py-0.5 px-2 font-bold text-left uppercase text-[9px]">JUMLAH</td>
+                    <td className="border-2 border-black py-0.5 px-1 text-center font-extrabold text-[9px]">{totalNilai}</td>
+                    <td colSpan={2} className="border-2 border-black py-0.5 px-2"></td>
                   </tr>
-                  <tr>
-                    <td colSpan={3} className="border-2 border-black py-2 px-3 font-bold text-left uppercase">RATA-RATA</td>
-                    <td className="border-2 border-black py-2 px-1 text-center font-bold">{averageNilaiStr}</td>
-                    <td colSpan={2} className="border-2 border-black py-2 px-3"></td>
+                  <tr className="animate-none">
+                    <td colSpan={3} className="border-2 border-black py-0.5 px-2 font-bold text-left uppercase text-[9px]">RATA-RATA</td>
+                    <td className="border-2 border-black py-0.5 px-1 text-center font-extrabold text-[9px]">{averageNilaiStr}</td>
+                    <td colSpan={2} className="border-2 border-black py-0.5 px-2"></td>
                   </tr>
-                  <tr>
-                    <td colSpan={3} className="border-2 border-black py-2 px-3 font-bold text-left uppercase">KUALIFIKASI NILAI</td>
-                    <td colSpan={3} className="border-2 border-black py-2 px-3 text-center font-extrabold">{kualifikasiNilai}</td>
+                  <tr className="animate-none">
+                    <td colSpan={3} className="border-2 border-black py-0.5 px-2 font-bold text-left uppercase text-[9px]">KUALIFIKASI NILAI</td>
+                    <td colSpan={3} className="border-2 border-black py-0.5 px-2 text-center font-black text-[9px] text-[#407655]">{kualifikasiNilai}</td>
                   </tr>
                 </tbody>
               </table>
 
               {/* Catatan Area */}
-              <div className="border-2 border-black p-3 mt-4 min-h-[4rem]">
-                <div className="font-bold text-[11px]">Catatan :</div>
-                <div className="italic text-[11px] mt-1 text-black font-semibold">
+              <div className="border-2 border-black p-1.5 mt-1.5 min-h-[2.5rem]">
+                <div className="font-bold text-[9.5px]">Catatan :</div>
+                <div className="italic text-[9px] mt-0.5 text-black font-semibold">
                   {activePrintPersonality?.catatan || 'perhatikan untuk lebih berdisiplin'}
                 </div>
               </div>
 
               {/* Promotion status */}
-              <div className="mt-4 font-bold text-[11px]">
+              <div className="mt-1.5 font-bold text-[9.5px]">
                 Naik kelas / <span className="line-through">Tinggal kelas</span>
               </div>
 
               {/* Double charts container */}
-              <div className="flex justify-between items-stretch gap-6 mt-4">
+              <div className="flex justify-between items-stretch gap-3 mt-1.5">
                 {/* Left Side: Attendance & Personality tables */}
-                <div className="w-[48%] space-y-4">
+                <div className="w-[48%] space-y-1.5">
                   <div>
-                    <div className="font-bold text-[11px] mb-1.5 font-bold">Kehadiran :</div>
-                    <table className="w-full text-center border-collapse border-2 border-black text-[10px]">
+                    <div className="font-bold text-[9.5px] mb-0.5">Kehadiran :</div>
+                    <table className="w-full text-center border-collapse border-2 border-black text-[9px]">
                       <thead className="bg-[#407655] text-white">
                         <tr>
-                          <th className="border border-black py-1 px-1">Sakit</th>
-                          <th className="border border-black py-1 px-1">Ijin</th>
-                          <th className="border border-black py-1 px-1">Alpha</th>
+                          <th className="border border-black py-0.5 px-1">Sakit</th>
+                          <th className="border border-black py-0.5 px-1">Ijin</th>
+                          <th className="border border-black py-0.5 px-1">Alpha</th>
                         </tr>
                       </thead>
                       <tbody className="font-bold">
                         <tr>
-                          <td className="border border-black py-1 px-1">
+                          <td className="border border-black py-0.5 px-1">
                             {activePrintAttendance ? activePrintAttendance.sakit : 0}
                           </td>
-                          <td className="border border-black py-1 px-1">
+                          <td className="border border-black py-0.5 px-1">
                             {activePrintAttendance ? activePrintAttendance.izin : 0}
                           </td>
-                          <td className="border border-black py-1 px-1">
+                          <td className="border border-black py-0.5 px-1">
                             {activePrintAttendance ? activePrintAttendance.alpa : 0}
                           </td>
                         </tr>
@@ -845,20 +1010,20 @@ export default function ReportsCenter({
                   </div>
 
                   <div>
-                    <div className="font-bold text-[11px] mb-1.5 font-bold">Kepribadian :</div>
-                    <table className="w-full text-center border-collapse border-2 border-black text-[10px]">
+                    <div className="font-bold text-[9.5px] mb-0.5">Kepribadian :</div>
+                    <table className="w-full text-center border-collapse border-2 border-black text-[9px]">
                       <thead className="bg-[#407655] text-white">
                         <tr>
-                          <th className="border border-black py-1 px-1">Ibadah</th>
-                          <th className="border border-black py-1 px-1 font-bold">Akhlak</th>
-                          <th className="border border-black py-1 px-1">Disiplin</th>
+                          <th className="border border-black py-0.5 px-1">Ibadah</th>
+                          <th className="border border-black py-0.5 px-1 font-bold">Akhlak</th>
+                          <th className="border border-black py-0.5 px-1">Disiplin</th>
                         </tr>
                       </thead>
                       <tbody className="font-bold">
                         <tr>
-                          <td className="border border-black py-1.5 px-1">{activePrintPersonality?.ibadah || 'B'}</td>
-                          <td className="border border-black py-1.5 px-1">{activePrintPersonality?.akhlak || 'B'}</td>
-                          <td className="border border-black py-1.5 px-1">{activePrintPersonality?.disiplin || 'B'}</td>
+                          <td className="border border-black py-0.5 px-1">{activePrintPersonality?.ibadah || 'B'}</td>
+                          <td className="border border-black py-0.5 px-1">{activePrintPersonality?.akhlak || 'B'}</td>
+                          <td className="border border-black py-0.5 px-1">{activePrintPersonality?.disiplin || 'B'}</td>
                         </tr>
                       </tbody>
                     </table>
@@ -866,16 +1031,16 @@ export default function ReportsCenter({
                 </div>
 
                 {/* Right Side: Keterangan rounded-box list */}
-                <div className="w-[48%] border-2 border-[#417555] rounded-lg p-4 text-[10px] bg-white text-black flex flex-col justify-between">
-                  <div className="text-center font-bold text-[#407655] pb-1.5 border-b-2 border-slate-200 uppercase tracking-wide">KETERANGAN</div>
-                  <div className="space-y-2 font-medium mt-2">
-                    <div className="flex justify-between border-b border-dashed border-slate-200 pb-1">
+                <div className="w-[48%] border-2 border-[#417555] rounded-lg p-2 text-[9px] bg-white text-black flex flex-col justify-between">
+                  <div className="text-center font-bold text-[#407655] pb-0.5 border-b border-slate-200 uppercase tracking-wide">KETERANGAN</div>
+                  <div className="space-y-0.5 font-medium mt-1">
+                    <div className="flex justify-between border-b border-dashed border-slate-200 pb-0.5">
                       <span>89 – 100</span> <span className="font-bold">= A (Sangat Baik)</span>
                     </div>
-                    <div className="flex justify-between border-b border-dashed border-slate-200 pb-1">
+                    <div className="flex justify-between border-b border-dashed border-slate-200 pb-0.5">
                       <span>77 – 88</span> <span className="font-bold">= B (Baik)</span>
                     </div>
-                    <div className="flex justify-between border-b border-dashed border-slate-200 pb-1">
+                    <div className="flex justify-between border-b border-dashed border-slate-200 pb-0.5">
                       <span>65 – 76</span> <span className="font-bold">= C (Cukup)</span>
                     </div>
                     <div className="flex justify-between">
@@ -887,34 +1052,34 @@ export default function ReportsCenter({
             </div>
 
             {/* Print Signatures */}
-            <div className="mt-8 text-[11px] pt-6 border-t border-dashed border-slate-300">
-              <div className="flex justify-between">
-                <div></div>
+            <div className="mt-3 text-[9.5px] pt-1.5 border-t border-dashed border-slate-300">
+              {/* First row of signatures */}
+              <div className="flex justify-between items-start">
+                <div className="text-center w-64">
+                  <p>Mengetahui,</p>
+                  <p className="font-bold">Orang Tua Wali</p>
+                </div>
                 <div className="text-center w-64 pr-2">
                   <p>Jakarta, 2 Juni 2026</p>
                   <p className="font-bold">Guru Terpadu {activePrintStudent.kelas}</p>
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 text-center mt-12 gap-4">
-                <div className="flex flex-col justify-between min-h-[80px]">
-                  <div>
-                    <p>Mengetahui,</p>
-                    <p className="font-bold">Orang Tua Wali</p>
-                  </div>
-                  <p className="mt-10 font-bold text-black">.......................................................</p>
+              {/* Second row showing names / lines */}
+              <div className="flex justify-between items-end mt-4">
+                <div className="text-center w-64">
+                  <p className="font-bold text-black">.......................................................</p>
                 </div>
+                <div className="text-center w-64 pr-2">
+                  <p className="font-extrabold underline uppercase">{resolvedWaliKelas.nama}</p>
+                </div>
+              </div>
 
-                <div className="flex flex-col justify-end min-h-[80px]">
-                  <p className="font-bold mb-6 text-center">Mengetahui,</p>
-                  <p className="font-bold">Kepala Sekolah</p>
-                  <p className="font-extrabold underline mt-10 uppercase">SITI MUNIROH, S.Pd.I., M.M</p>
-                </div>
-
-                <div className="flex flex-col justify-end min-h-[80px]">
-                  <div></div>
-                  <p className="font-extrabold underline uppercase mt-10">FATRA TSAURAH NISA, S.Pd</p>
-                </div>
+              {/* Third row: Kepala Sekolah Centered */}
+              <div className="text-center mt-2">
+                <p className="font-bold">Mengetahui,</p>
+                <p className="font-bold">Kepala Sekolah</p>
+                <p className="font-extrabold underline mt-3.5 uppercase">SITI MUNIROH, S.Pd.I., M.M</p>
               </div>
             </div>
           </div>
