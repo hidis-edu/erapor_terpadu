@@ -4,7 +4,7 @@ import {
   School, LayoutDashboard, ClipboardCopy, HeartHandshake, 
   FolderDown, LogOut, Loader2, BellRing, Sparkles, Star, UserCheck
 } from 'lucide-react';
-import { Grade, Personality, Student, Subject, Teacher } from './types';
+import { Grade, Personality, Student, Subject, Teacher, Attendance } from './types';
 import { 
   DEFAULT_SUBJECTS, FALLBACK_STUDENTS, INITIAL_GRADES, INITIAL_PERSONALITIES 
 } from './data';
@@ -12,6 +12,7 @@ import LoginScreen from './components/LoginScreen';
 import DashboardOverview from './components/DashboardOverview';
 import GradeEntryForm from './components/GradeEntryForm';
 import PersonalityEntryForm from './components/PersonalityEntryForm';
+import AttendanceEntryForm from './components/AttendanceEntryForm';
 import ReportsCenter from './components/ReportsCenter';
 
 interface Toast {
@@ -28,11 +29,13 @@ export default function App() {
   const [isLoadingStudents, setIsLoadingStudents] = useState(false);
   const [isLoadingGrades, setIsLoadingGrades] = useState(false);
   const [isLoadingPersonalities, setIsLoadingPersonalities] = useState(false);
+  const [isLoadingAttendances, setIsLoadingAttendances] = useState(false);
   const [subjects] = useState<Subject[]>(DEFAULT_SUBJECTS);
 
   // Persistence collections
   const [grades, setGrades] = useState<Grade[]>([]);
   const [personalities, setPersonalities] = useState<Personality[]>([]);
+  const [attendances, setAttendances] = useState<Attendance[]>([]);
 
   // Notification Toast state
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -82,6 +85,19 @@ export default function App() {
       }
     } else {
       setPersonalities([]);
+    }
+
+    // Load Attendances list
+    const storedAttendances = localStorage.getItem('attendances');
+    if (storedAttendances) {
+      try {
+        const parsedAtt: Attendance[] = JSON.parse(storedAttendances);
+        setAttendances(parsedAtt);
+      } catch (e) {
+        setAttendances([]);
+      }
+    } else {
+      setAttendances([]);
     }
 
     setIsLoading(false);
@@ -172,9 +188,42 @@ export default function App() {
       setIsLoadingPersonalities(false);
     }
 
+    async function loadAttendancesApi() {
+      setIsLoadingAttendances(true);
+      try {
+        const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'https://fastify.nganjuk.net';
+        const response = await fetch(`${apiBaseUrl}/api/rapor/kehadiran`);
+        if (response.ok) {
+          const result = await response.json();
+          if (result && result.status === 'sukses' && Array.isArray(result.data)) {
+            const apiAttendances: Attendance[] = result.data.map((item: any) => ({
+              replid: Number(item.replid),
+              nis: String(item.nis),
+              idsemester: Number(item.idsemester || 34),
+              tahunajaran: String(item.tahunajaran || '2025/2026'),
+              sakit: Number(item.sakit || 0),
+              izin: Number(item.izin || 0),
+              alpa: Number(item.alpa || 0),
+              catatan: String(item.catatan || ''),
+              nama_siswa: String(item.nama_siswa || '')
+            }));
+
+            setAttendances(apiAttendances);
+            localStorage.setItem('attendances', JSON.stringify(apiAttendances));
+            setIsLoadingAttendances(false);
+            return;
+          }
+        }
+      } catch (e) {
+        console.warn('API down/cors issue for Attendances. Using local fallbacks.', e);
+      }
+      setIsLoadingAttendances(false);
+    }
+
     loadStudentsApi();
     loadGradesApi();
     loadPersonalitiesApi();
+    loadAttendancesApi();
   }, []);
 
   // 3. Database operations
@@ -279,6 +328,103 @@ export default function App() {
     }
   };
 
+  const handleSaveAttendance = async (newAttendance: Attendance) => {
+    // Local-first preview ID generated gracefully
+    const idToUse = newAttendance.replid || Math.floor(Date.now() + Math.random() * 1000);
+    const itemWithId = { ...newAttendance, replid: idToUse };
+
+    setAttendances((prev) => {
+      const idx = prev.findIndex(a => 
+        (newAttendance.replid && a.replid === newAttendance.replid) || 
+        (!newAttendance.replid && a.nis === newAttendance.nis && a.idsemester === newAttendance.idsemester)
+      );
+      let updated = [...prev];
+      if (idx !== -1) {
+        updated[idx] = itemWithId;
+      } else {
+        updated.push(itemWithId);
+      }
+      localStorage.setItem('attendances', JSON.stringify(updated));
+      return updated;
+    });
+
+    try {
+      const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'https://fastify.nganjuk.net';
+      let response;
+      if (newAttendance.replid) {
+        // UPDATE (PUT) based on replid
+        response = await fetch(`${apiBaseUrl}/api/rapor/kehadiran/${newAttendance.replid}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sakit: newAttendance.sakit,
+            izin: newAttendance.izin,
+            alpa: newAttendance.alpa,
+            catatan: newAttendance.catatan
+          })
+        });
+      } else {
+        // SAVE (POST) to /kehadiran/simpan
+        response = await fetch(`${apiBaseUrl}/api/rapor/kehadiran/simpan`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            nis: newAttendance.nis,
+            idsemester: newAttendance.idsemester,
+            sakit: newAttendance.sakit,
+            izin: newAttendance.izin,
+            alpa: newAttendance.alpa,
+            catatan: newAttendance.catatan
+          })
+        });
+      }
+      
+      // Load fresh IDs if synchronized
+      if (response && response.ok) {
+        const freshResponse = await fetch(`${apiBaseUrl}/api/rapor/kehadiran`);
+        if (freshResponse.ok) {
+          const freshResult = await freshResponse.json();
+          if (freshResult && freshResult.status === 'sukses' && Array.isArray(freshResult.data)) {
+            const apiAttendances = freshResult.data.map((item: any) => ({
+              replid: Number(item.replid),
+              nis: String(item.nis),
+              idsemester: Number(item.idsemester || 34),
+              tahunajaran: String(item.tahunajaran || '2025/2026'),
+              sakit: Number(item.sakit || 0),
+              izin: Number(item.izin || 0),
+              alpa: Number(item.alpa || 0),
+              catatan: String(item.catatan || ''),
+              nama_siswa: String(item.nama_siswa || '')
+            }));
+            setAttendances(apiAttendances);
+            localStorage.setItem('attendances', JSON.stringify(apiAttendances));
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('API error synchronising attendance save/update', e);
+    }
+  };
+
+  const handleDeleteAttendance = async (nis: string, replid?: number) => {
+    setAttendances((prev) => {
+      const filtered = prev.filter(a => !(a.nis === nis && (replid ? a.replid === replid : true)));
+      localStorage.setItem('attendances', JSON.stringify(filtered));
+      return filtered;
+    });
+
+    try {
+      if (replid) {
+        const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'https://fastify.nganjuk.net';
+        await fetch(`${apiBaseUrl}/api/rapor/kehadiran/${replid}`, {
+          method: 'DELETE'
+        });
+      }
+    } catch (e) {
+      console.warn('API error synchronising attendance deletion', e);
+    }
+  };
+
   const handleLogout = () => {
     localStorage.removeItem('dataGuru');
     setCurrentTeacher(null);
@@ -362,6 +508,7 @@ export default function App() {
                 { id: 'dashboard', label: 'Dashboard Overview', icon: LayoutDashboard },
                 { id: 'grade', label: 'Input Nilai Rapor', icon: ClipboardCopy },
                 { id: 'personality', label: 'Kepribadian Siswa', icon: HeartHandshake },
+                { id: 'attendance', label: 'Kehadiran Siswa', icon: UserCheck },
                 { id: 'reports', label: 'Laporan & Cetak', icon: FolderDown }
               ].map((menuItem) => {
                 const IconComp = menuItem.icon;
@@ -439,6 +586,7 @@ export default function App() {
               {currentTab === 'dashboard' && 'Dashboard Overview'}
               {currentTab === 'grade' && 'Input Nilai Rapor'}
               {currentTab === 'personality' && 'Kepribadian Sikap'}
+              {currentTab === 'attendance' && 'Kehadiran Siswa'}
               {currentTab === 'reports' && 'Laporan & Cetak'}
             </span>
           </div>
@@ -507,12 +655,23 @@ export default function App() {
               />
             )}
 
+            {currentTab === 'attendance' && (
+              <AttendanceEntryForm
+                students={students}
+                attendances={attendances}
+                onSaveAttendance={handleSaveAttendance}
+                onDeleteAttendance={handleDeleteAttendance}
+                addToast={addToast}
+              />
+            )}
+
             {currentTab === 'reports' && (
               <ReportsCenter
                 grades={grades}
                 personalities={personalities}
                 students={students}
                 subjects={subjects}
+                attendances={attendances}
                 addToast={addToast}
               />
             )}

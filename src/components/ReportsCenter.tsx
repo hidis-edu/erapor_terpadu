@@ -4,7 +4,7 @@ import {
   Search, FileSpreadsheet, FileText, Printer, Filter, X, 
   ArrowUpDown, CheckCircle, GraduationCap, Calendar, Settings
 } from 'lucide-react';
-import { Grade, Personality, Student, Subject } from '../types';
+import { Grade, Personality, Student, Subject, Attendance } from '../types';
 import { handleExportExcel, handleExportPDF, numberToWords } from '../data';
 
 interface ReportsCenterProps {
@@ -12,6 +12,7 @@ interface ReportsCenterProps {
   personalities: Personality[];
   students: Student[];
   subjects: Subject[];
+  attendances: Attendance[];
   addToast: (message: string, type: 'success' | 'error') => void;
 }
 
@@ -20,6 +21,7 @@ export default function ReportsCenter({
   personalities,
   students,
   subjects,
+  attendances,
   addToast
 }: ReportsCenterProps) {
   const [searchTerm, setSearchTerm] = useState('');
@@ -29,6 +31,7 @@ export default function ReportsCenter({
   // Modal for direct printing of report cards
   const [printModalOpen, setPrintModalOpen] = useState(false);
   const [printNis, setPrintNis] = useState('');
+  const [printSelectedClass, setPrintSelectedClass] = useState('');
 
   // 1. Get list of classes and subjects for filtering
   const classesList = useMemo(() => {
@@ -114,6 +117,15 @@ export default function ReportsCenter({
     return students.filter(s => grades.some(g => g.nis === s.nis));
   }, [students, grades]);
 
+  const printClassesList = useMemo(() => {
+    return Array.from(new Set(printableList.map(s => s.kelas))).sort();
+  }, [printableList]);
+
+  const filteredPrintableStudents = useMemo(() => {
+    if (!printSelectedClass) return [];
+    return printableList.filter(s => s.kelas === printSelectedClass);
+  }, [printableList, printSelectedClass]);
+
   const activePrintStudent = useMemo(() => {
     return students.find(s => s.nis === printNis);
   }, [printNis, students]);
@@ -125,6 +137,10 @@ export default function ReportsCenter({
   const activePrintPersonality = useMemo(() => {
     return personalities.find(p => p.nis === printNis);
   }, [printNis, personalities]);
+
+  const activePrintAttendance = useMemo(() => {
+    return attendances.find(a => a.nis === printNis);
+  }, [printNis, attendances]);
 
   const totalNilai = useMemo(() => {
     return activePrintGrades.reduce((sum, g) => sum + g.nilaiakhir, 0);
@@ -310,7 +326,7 @@ export default function ReportsCenter({
         <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-4 z-50 overflow-y-auto">
           <div className={`bg-white rounded-2xl w-full ${printNis && activePrintStudent ? 'max-w-5xl' : 'max-w-md'} p-6 shadow-2xl relative border border-slate-100 flex flex-col gap-4 transition-all duration-300`}>
             <button
-              onClick={() => { setPrintModalOpen(false); setPrintNis(''); }}
+              onClick={() => { setPrintModalOpen(false); setPrintNis(''); setPrintSelectedClass(''); }}
               className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 transition-all cursor-pointer z-10"
             >
               <X className="w-5 h-5" />
@@ -321,10 +337,29 @@ export default function ReportsCenter({
               <div className={printNis && activePrintStudent ? 'lg:col-span-4 space-y-4' : 'space-y-4'}>
                 <div>
                   <h3 className="text-base font-extrabold text-slate-800">🖨️ Cetak Lembar Rapor Individu</h3>
-                  <p className="text-xs text-slate-400 mt-0.5">Pilih siswa yang sudah diisi nilainya untuk dicetak</p>
+                  <p className="text-xs text-slate-400 mt-0.5">Pilih kelas lalu pilih siswa untuk dicetak</p>
                 </div>
 
                 <div className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wider">
+                      Pilih Kelas
+                    </label>
+                    <select
+                      value={printSelectedClass}
+                      onChange={(e) => {
+                        setPrintSelectedClass(e.target.value);
+                        setPrintNis('');
+                      }}
+                      className="w-full bg-slate-50 border border-slate-200 py-2.5 px-3 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500 font-sans"
+                    >
+                      <option value="">-- Pilih Kelas --</option>
+                      {printClassesList.map(cls => (
+                        <option key={cls} value={cls}>Kelas {cls}</option>
+                      ))}
+                    </select>
+                  </div>
+
                   <div>
                     <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wider">
                       Siswa Sasaran Cetak
@@ -332,10 +367,13 @@ export default function ReportsCenter({
                     <select
                       value={printNis}
                       onChange={(e) => setPrintNis(e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 py-2.5 px-3 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      disabled={!printSelectedClass}
+                      className="w-full bg-slate-50 border border-slate-200 py-2.5 px-3 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-60 disabled:cursor-not-allowed font-sans"
                     >
-                      <option value="">-- Pilih Siswa --</option>
-                      {printableList.map(s => (
+                      <option value="">
+                        {printSelectedClass ? '-- Pilih Siswa --' : '-- Pilih Kelas Terlebih Dahulu --'}
+                      </option>
+                      {filteredPrintableStudents.map(s => (
                         <option key={s.nis} value={s.nis}>{s.nama} ({s.nis})</option>
                       ))}
                     </select>
@@ -373,7 +411,7 @@ export default function ReportsCenter({
 
                   <div className="flex gap-2.5 pt-2">
                     <button
-                      onClick={() => { setPrintModalOpen(false); setPrintNis(''); }}
+                      onClick={() => { setPrintModalOpen(false); setPrintNis(''); setPrintSelectedClass(''); }}
                       className="flex-1 py-2.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-600 rounded-xl text-xs font-bold transition-all cursor-pointer text-center"
                     >
                       Tutup
@@ -381,7 +419,7 @@ export default function ReportsCenter({
                     <button
                       onClick={handleTriggerPrint}
                       disabled={!printNis}
-                      className="flex-1 py-2.5 bg-slate-900 hover:bg-slate-800 text-white disabled:opacity-55 disabled:cursor-not-allowed rounded-xl text-xs font-bold transition-all cursor-pointer font-semibold shadow-md inline-flex items-center justify-center gap-1.5"
+                      className="flex-1 py-2.5 bg-slate-900 hover:bg-slate-800 text-white disabled:opacity-55 disabled:cursor-not-allowed rounded-xl text-xs font-bold transition-all cursor-pointer font-semibold shadow-md inline-flex items-center justify-center gap-1.5 animate-pulse"
                     >
                       <Printer className="w-4 h-4" />
                       <span>Mulai Cetak</span>
@@ -535,13 +573,13 @@ export default function ReportsCenter({
                               <tbody className="font-bold">
                                 <tr>
                                   <td className="border border-slate-800 py-0.5 px-0.5">
-                                    {activePrintStudent.nis === '1634' ? 1 : (Number(activePrintStudent.nis) % 3)}
+                                    {activePrintAttendance ? activePrintAttendance.sakit : 0}
                                   </td>
                                   <td className="border border-slate-800 py-0.5 px-0.5">
-                                    {activePrintStudent.nis === '1634' ? 1 : (Number(activePrintStudent.nis) % 2)}
+                                    {activePrintAttendance ? activePrintAttendance.izin : 0}
                                   </td>
                                   <td className="border border-slate-800 py-0.5 px-0.5">
-                                    {activePrintStudent.nis === '1634' ? 1 : (Number(activePrintStudent.nis) % 4 === 0 ? 1 : 0)}
+                                    {activePrintAttendance ? activePrintAttendance.alpa : 0}
                                   </td>
                                 </tr>
                               </tbody>
@@ -793,13 +831,13 @@ export default function ReportsCenter({
                       <tbody className="font-bold">
                         <tr>
                           <td className="border border-black py-1 px-1">
-                            {activePrintStudent.nis === '1634' ? 1 : (Number(activePrintStudent.nis) % 3)}
+                            {activePrintAttendance ? activePrintAttendance.sakit : 0}
                           </td>
                           <td className="border border-black py-1 px-1">
-                            {activePrintStudent.nis === '1634' ? 1 : (Number(activePrintStudent.nis) % 2)}
+                            {activePrintAttendance ? activePrintAttendance.izin : 0}
                           </td>
                           <td className="border border-black py-1 px-1">
-                            {activePrintStudent.nis === '1634' ? 1 : (Number(activePrintStudent.nis) % 4 === 0 ? 1 : 0)}
+                            {activePrintAttendance ? activePrintAttendance.alpa : 0}
                           </td>
                         </tr>
                       </tbody>

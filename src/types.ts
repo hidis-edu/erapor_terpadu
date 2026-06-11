@@ -42,3 +42,18 @@ export interface Personality {
   catatan: string;
   createdAt?: string;
 }
+
+export interface Attendance {
+  replid?: number;
+  nis: string;
+  idsemester: number;
+  tahunajaran: string;
+  sakit: number;
+  izin: number;
+  alpa: number;
+  catatan: string;
+  nama_siswa?: string;
+  idkelas?: string;
+  createdAt?: string;
+  updated_at?: string;
+}
