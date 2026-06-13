@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   School, LayoutDashboard, ClipboardCopy, HeartHandshake, 
-  FolderDown, LogOut, Loader2, BellRing, Sparkles, Star, UserCheck
+  FolderDown, LogOut, Loader2, BellRing, Sparkles, Star, UserCheck, FileSpreadsheet,
+  Settings
 } from 'lucide-react';
 import { Grade, Personality, Student, Subject, Teacher, Attendance } from './types';
 import { 
@@ -14,6 +15,9 @@ import GradeEntryForm from './components/GradeEntryForm';
 import PersonalityEntryForm from './components/PersonalityEntryForm';
 import AttendanceEntryForm from './components/AttendanceEntryForm';
 import ReportsCenter from './components/ReportsCenter';
+import RekapRaporCenter from './components/RekapRaporCenter';
+import SystemSettings from './components/SystemSettings';
+import { sendAdminNotification } from './utils/whatsapp';
 
 interface Toast {
   id: string;
@@ -40,6 +44,23 @@ export default function App() {
 
   // Notification Toast state
   const [toasts, setToasts] = useState<Toast[]>([]);
+
+  // Dynamically map class IDs (idkelas / numeric kelas e.g. 190) to readable class names (e.g. 6A) using activeClasses list
+  const resolvedStudents = useMemo(() => {
+    return students.map((student) => {
+      const classId = (student as any).idkelas || student.kelas;
+      if (classId && !isNaN(Number(classId))) {
+        const found = (activeClasses || []).find((c: any) => c && String(c.replid) === String(classId));
+        if (found && found.kelas) {
+          return {
+            ...student,
+            kelas: String(found.kelas)
+          };
+        }
+      }
+      return student;
+    });
+  }, [students, activeClasses]);
 
   // Add toast helper
   const addToast = (message: string, type: 'success' | 'error') => {
@@ -159,6 +180,7 @@ export default function App() {
           const result = await response.json();
           if (result && result.status === 'sukses' && Array.isArray(result.data)) {
             const apiGrades: Grade[] = result.data.map((item: any) => ({
+              replid: item.replid ? Number(item.replid) : undefined,
               nis: String(item.nis),
               idpelajaran: Number(item.idpelajaran),
               nipguru: String(item.nipguru),
@@ -276,12 +298,44 @@ export default function App() {
 
   // 3. Database operations
   const handleSaveGrade = async (newGrade: Grade) => {
-    // Check if grade for this specific subject and student already exists to update it
+    // Check if total graded subjects becomes exactly 10
+    const studentGrades = grades.filter(g => String(g.nis) === String(newGrade.nis));
+    const existingIndex = studentGrades.findIndex(g => g.idpelajaran === newGrade.idpelajaran);
+    let totalMapelAfterSave = studentGrades.length;
+    if (existingIndex === -1) {
+      totalMapelAfterSave += 1;
+    }
+
+    if (totalMapelAfterSave === 10) {
+      try {
+        const studentObj = students.find(s => String(s.nis) === String(newGrade.nis));
+        const studentName = studentObj ? studentObj.nama : `Siswa NIS ${newGrade.nis}`;
+        const className = studentObj ? studentObj.kelas : '-';
+        const teacherName = currentTeacher ? currentTeacher.nama : 'Guru';
+        
+        const timestamp = new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
+        const adminMsg = `📝 *PENGISIAN RAPOR LENGKAP (10 MAPEL)*\n\n` +
+                         `👤 *Siswa:* ${studentName} (${newGrade.nis})\n` +
+                         `🏫 *Kelas:* ${className}\n` +
+                         `✍️ *Input Oleh:* ${teacherName}\n` +
+                         `🕒 *Waktu:* ${timestamp}\n\n` +
+                         `Guru telah sukses melengkapi seluruh (*10 Mata Pelajaran*) nilai rapor siswa tersebut.`;
+        sendAdminNotification(adminMsg).catch(err => console.error(err));
+      } catch (err) {
+        console.error('Error triggering grade completion notification:', err);
+      }
+    }
+
+    // Find if we already have this grade in state
+    const existing = grades.find(g => g.nis === newGrade.nis && g.idpelajaran === newGrade.idpelajaran);
+    const existingReplid = existing?.replid || newGrade.replid;
+
+    // Update local state temporarily
     setGrades((prev) => {
       const idx = prev.findIndex(g => g.nis === newGrade.nis && g.idpelajaran === newGrade.idpelajaran);
       let updated = [...prev];
       if (idx !== -1) {
-        updated[idx] = newGrade;
+        updated[idx] = { ...newGrade, replid: existingReplid };
       } else {
         updated.push(newGrade);
       }
@@ -291,26 +345,69 @@ export default function App() {
 
     try {
       const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'https://fastify.nganjuk.net';
-      await fetch(`${apiBaseUrl}/api/rapor/terpadu`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          nis: newGrade.nis,
-          idpelajaran: newGrade.idpelajaran,
-          nipguru: newGrade.nipguru,
-          kkm: newGrade.kkm,
-          nilaiakhir: newGrade.nilaiakhir,
-          nilaihuruf: newGrade.nilaihuruf,
-          predikat: newGrade.predikat,
-          catatanguru: newGrade.catatanguru
-        })
-      });
+      let response;
+      if (existingReplid) {
+        // If there's an existing database record, use PUT: fastify.put('/terpadu/:id')
+        response = await fetch(`${apiBaseUrl}/api/rapor/terpadu/${existingReplid}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            kkm: newGrade.kkm,
+            nilaiakhir: newGrade.nilaiakhir,
+            nilaihuruf: newGrade.nilaihuruf,
+            predikat: newGrade.predikat,
+            catatanguru: newGrade.catatanguru
+          })
+        });
+      } else {
+        // Otherwise, insert via POST: fastify.post('/terpadu')
+        response = await fetch(`${apiBaseUrl}/api/rapor/terpadu`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            nis: newGrade.nis,
+            idpelajaran: newGrade.idpelajaran,
+            nipguru: newGrade.nipguru,
+            kkm: newGrade.kkm,
+            nilaiakhir: newGrade.nilaiakhir,
+            nilaihuruf: newGrade.nilaihuruf,
+            predikat: newGrade.predikat,
+            catatanguru: newGrade.catatanguru
+          })
+        });
+      }
+
+      // Re-trigger loadGradesApi to fetch real-time replids assigned by the database!
+      if (response && response.ok) {
+        const refreshResponse = await fetch(`${apiBaseUrl}/api/rapor/terpadu`);
+        if (refreshResponse.ok) {
+          const result = await refreshResponse.json();
+          if (result && result.status === 'sukses' && Array.isArray(result.data)) {
+            const apiGrades: Grade[] = result.data.map((item: any) => ({
+              replid: item.replid ? Number(item.replid) : undefined,
+              nis: String(item.nis),
+              idpelajaran: Number(item.idpelajaran),
+              nipguru: String(item.nipguru),
+              kkm: Number(item.kkm),
+              nilaiakhir: Number(item.nilaiakhir),
+              nilaihuruf: String(item.nilaihuruf),
+              predikat: String(item.predikat),
+              catatanguru: String(item.catatanguru || '')
+            }));
+            setGrades(apiGrades);
+            localStorage.setItem('grades', JSON.stringify(apiGrades));
+          }
+        }
+      }
     } catch (e) {
       console.warn('API error synchronising grade save', e);
     }
   };
 
   const handleDeleteGrade = async (nis: string, idpelajaran: number) => {
+    const target = grades.find(g => g.nis === nis && g.idpelajaran === idpelajaran);
+    const targetReplid = target?.replid;
+
     setGrades((prev) => {
       const filtered = prev.filter(g => !(g.nis === nis && g.idpelajaran === idpelajaran));
       localStorage.setItem('grades', JSON.stringify(filtered));
@@ -319,9 +416,38 @@ export default function App() {
 
     try {
       const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'https://fastify.nganjuk.net';
-      await fetch(`${apiBaseUrl}/api/rapor/terpadu?nis=${nis}&idpelajaran=${idpelajaran}`, {
-        method: 'DELETE'
-      });
+      let response;
+      if (targetReplid) {
+        response = await fetch(`${apiBaseUrl}/api/rapor/terpadu/${targetReplid}`, {
+          method: 'DELETE'
+        });
+      } else {
+        response = await fetch(`${apiBaseUrl}/api/rapor/terpadu?nis=${nis}&idpelajaran=${idpelajaran}`, {
+          method: 'DELETE'
+        });
+      }
+
+      if (response && response.ok) {
+        const refreshResponse = await fetch(`${apiBaseUrl}/api/rapor/terpadu`);
+        if (refreshResponse.ok) {
+          const result = await refreshResponse.json();
+          if (result && result.status === 'sukses' && Array.isArray(result.data)) {
+            const apiGrades: Grade[] = result.data.map((item: any) => ({
+              replid: item.replid ? Number(item.replid) : undefined,
+              nis: String(item.nis),
+              idpelajaran: Number(item.idpelajaran),
+              nipguru: String(item.nipguru),
+              kkm: Number(item.kkm),
+              nilaiakhir: Number(item.nilaiakhir),
+              nilaihuruf: String(item.nilaihuruf),
+              predikat: String(item.predikat),
+              catatanguru: String(item.catatanguru || '')
+            }));
+            setGrades(apiGrades);
+            localStorage.setItem('grades', JSON.stringify(apiGrades));
+          }
+        }
+      }
     } catch (e) {
       console.warn('API error synchronising grade deletion', e);
     }
@@ -557,7 +683,9 @@ export default function App() {
                 { id: 'grade', label: 'Input Nilai Rapor', icon: ClipboardCopy },
                 { id: 'personality', label: 'Kepribadian Siswa', icon: HeartHandshake },
                 { id: 'attendance', label: 'Kehadiran Siswa', icon: UserCheck },
-                { id: 'reports', label: 'Laporan & Cetak', icon: FolderDown }
+                { id: 'rekap', label: 'Rekap Rapor', icon: FileSpreadsheet },
+                { id: 'reports', label: 'Laporan & Cetak', icon: FolderDown },
+                { id: 'settings', label: 'Pengaturan Sistem', icon: Settings }
               ].map((menuItem) => {
                 const IconComp = menuItem.icon;
                 const isActive = currentTab === menuItem.id;
@@ -635,7 +763,9 @@ export default function App() {
               {currentTab === 'grade' && 'Input Nilai Rapor'}
               {currentTab === 'personality' && 'Kepribadian Sikap'}
               {currentTab === 'attendance' && 'Kehadiran Siswa'}
+              {currentTab === 'rekap' && 'Rekap Rapor'}
               {currentTab === 'reports' && 'Laporan & Cetak'}
+              {currentTab === 'settings' && 'Pengaturan Sistem'}
             </span>
           </div>
           
@@ -675,7 +805,7 @@ export default function App() {
               <DashboardOverview
                 grades={grades}
                 personalities={personalities}
-                students={students}
+                students={resolvedStudents}
                 subjects={subjects}
                 onNavigate={(tab) => setCurrentTab(tab)}
               />
@@ -683,7 +813,7 @@ export default function App() {
 
             {currentTab === 'grade' && (
               <GradeEntryForm
-                students={students}
+                students={resolvedStudents}
                 subjects={subjects}
                 currentTeacher={currentTeacher}
                 grades={grades}
@@ -695,7 +825,7 @@ export default function App() {
 
             {currentTab === 'personality' && (
               <PersonalityEntryForm
-                students={students}
+                students={resolvedStudents}
                 personalities={personalities}
                 onSavePersonality={handleSavePersonality}
                 onDeletePersonality={handleDeletePersonality}
@@ -705,10 +835,18 @@ export default function App() {
 
             {currentTab === 'attendance' && (
               <AttendanceEntryForm
-                students={students}
+                students={resolvedStudents}
                 attendances={attendances}
                 onSaveAttendance={handleSaveAttendance}
                 onDeleteAttendance={handleDeleteAttendance}
+                addToast={addToast}
+              />
+            )}
+
+            {currentTab === 'rekap' && (
+              <RekapRaporCenter
+                students={resolvedStudents}
+                activeClasses={activeClasses}
                 addToast={addToast}
               />
             )}
@@ -717,10 +855,16 @@ export default function App() {
               <ReportsCenter
                 grades={grades}
                 personalities={personalities}
-                students={students}
+                students={resolvedStudents}
                 subjects={subjects}
                 attendances={attendances}
                 activeClasses={activeClasses}
+                addToast={addToast}
+              />
+            )}
+
+            {currentTab === 'settings' && (
+              <SystemSettings
                 addToast={addToast}
               />
             )}

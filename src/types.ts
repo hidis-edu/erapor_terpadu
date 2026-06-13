@@ -3,6 +3,7 @@ export interface Student {
   nama: string;
   kelas: string;
   tahunajaran: string;
+  hportu?: string;
 }
 
 export interface Subject {
@@ -22,6 +23,7 @@ export interface Teacher {
 }
 
 export interface Grade {
+  replid?: number;
   nis: string;
   idpelajaran: number;
   nipguru: string;
@@ -56,4 +58,20 @@ export interface Attendance {
   idkelas?: string;
   createdAt?: string;
   updated_at?: string;
+}
+
+export interface RekapRapor {
+  replid?: number;
+  nis: string;
+  idsemester: number;
+  tahunajaran: string;
+  jumlah_mapel: number;
+  total_nilai: number;
+  rata_rata: number;
+  ibadah: string;
+  akhlak: string;
+  disiplin: string;
+  nama_siswa?: string;
+  idkelas?: string;
+  last_update?: string;
 }

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { School, User, Lock, AlertCircle, Sparkles, CheckCircle2 } from 'lucide-react';
 import { Teacher } from '../types';
+import { sendAdminNotification } from '../utils/whatsapp';
 
 interface LoginScreenProps {
   onLoginSuccess: (teacher: Teacher) => void;
@@ -36,7 +37,43 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
         let result: any = { success: false, user: null };
 
         if (response && response.ok) {
-          result = await response.json();
+          const rawData = await response.json().catch(() => null);
+          if (rawData) {
+            // Case 1: Nested user details under rawData.user
+            if (rawData.user) {
+              result = {
+                success: rawData.success !== false,
+                user: rawData.user
+              };
+            }
+            // Case 2: Nested under rawData.data
+            else if (rawData.data) {
+              result = {
+                success: rawData.success !== false,
+                user: rawData.data
+              };
+            }
+            // Case 3: Flat user structure containing typical user fields
+            else if (rawData.nip || rawData.nama || rawData.username) {
+              result = {
+                success: true,
+                user: rawData
+              };
+            }
+            // Case 4: General true flag
+            else if (rawData.success) {
+              result = {
+                success: true,
+                user: {
+                  nip: nip,
+                  nama: 'Pegawai JIBAS',
+                  jabatan: 'Pegawai/Guru'
+                }
+              };
+            } else {
+              result = { success: false, user: null };
+            }
+          }
         } else {
           // If the server route is in dev mode or not ready, let's check standard credentials
           // matching "2017071035" and "erwin" for a seamless front-end fallback
@@ -53,13 +90,63 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
               }
             };
           } else {
-            result = { success: false };
+            result = { success: false, user: null };
           }
         }
 
         if (result.success && result.user) {
           localStorage.setItem('dataGuru', JSON.stringify(result.user));
           setSuccess(true);
+          
+          // Send notification to admin
+          try {
+            const displayName = result.user.nama || result.user.username || result.user.nama_guru || 'User JIBAS';
+            const displayNip = result.user.nip || result.user.id || nip;
+            const displayJabatan = result.user.jabatan || 'Guru/Pegawai/Admin';
+
+            const getBrowserAndOS = () => {
+              const ua = navigator.userAgent;
+              let browserName = "Web Browser";
+              let osName = "Unknown OS";
+
+              if (ua.indexOf("Firefox") > -1) {
+                browserName = "Mozilla Firefox";
+              } else if (ua.indexOf("SamsungBrowser") > -1) {
+                browserName = "Samsung Internet";
+              } else if (ua.indexOf("Opera") > -1 || ua.indexOf("OPR") > -1) {
+                browserName = "Opera";
+              } else if (ua.indexOf("Edge") > -1 || ua.indexOf("Edg") > -1) {
+                browserName = "Microsoft Edge";
+              } else if (ua.indexOf("Chrome") > -1) {
+                browserName = "Google Chrome";
+              } else if (ua.indexOf("Safari") > -1) {
+                browserName = "Apple Safari";
+              }
+
+              if (ua.indexOf("Windows NT 10.0") > -1) osName = "Windows 10/11";
+              else if (ua.indexOf("Windows NT 6.2") > -1) osName = "Windows 8";
+              else if (ua.indexOf("Windows NT 6.1") > -1) osName = "Windows 7";
+              else if (ua.indexOf("Android") > -1) osName = "Android";
+              else if (ua.indexOf("iPhone") > -1 || ua.indexOf("iPad") > -1) osName = "iOS";
+              else if (ua.indexOf("Macintosh") > -1) osName = "macOS";
+              else if (ua.indexOf("Linux") > -1) osName = "Linux";
+
+              return `${browserName} (${osName})`;
+            };
+
+            const deviceDetails = getBrowserAndOS();
+            const loginTime = new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
+            const msg = `🔔 *NOTIFIKASI LOGIN ERAPOR*\n\n` +
+                        `👤 *Nama:* ${displayName}\n` +
+                        `🆔 *NIP:* ${displayNip}\n` +
+                        `💼 *Jabatan:* ${displayJabatan}\n` +
+                        `🌐 *Akses:* ${deviceDetails}\n` +
+                        `🕒 *Waktu:* ${loginTime}\n\n` +
+                        `Sistem mencatat login sukses pada E-Rapor Terpadu.`;
+            sendAdminNotification(msg).catch(e => console.warn('WA admin notify error:', e));
+          } catch (waErr) {
+            console.error('Error creating WA login message:', waErr);
+          }
           
           setTimeout(() => {
             onLoginSuccess(result.user);
