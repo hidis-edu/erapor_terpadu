@@ -6,6 +6,51 @@ module.exports = function (fastify, opts, next) {
   fastify.get('/print/terpadu/:nis', async (request, reply) => {
     const { nis } = request.params;
 
+    // Tambahkan mode debug instan untuk mendiagnosis kolom DB JBS yang sebenarnya
+    if (request.query.debug) {
+      try {
+        const [siswaRow] = await fastify.mysql.akad.query(
+          `SELECT * FROM jbsakad.siswa WHERE nis = ? LIMIT 1`,
+          [nis]
+        );
+        let idkelas = null;
+        if (siswaRow && siswaRow.length > 0) {
+          idkelas = siswaRow[0].idkelas;
+        }
+
+        const [kelasCols] = await fastify.mysql.akad.query(`SHOW COLUMNS FROM jbsakad.kelas`);
+        
+        let kelasData = null;
+        if (idkelas) {
+          const [kelasRow] = await fastify.mysql.akad.query(
+            `SELECT * FROM jbsakad.kelas WHERE replid = ? LIMIT 1`,
+            [idkelas]
+          );
+          kelasData = kelasRow;
+        } else {
+          const [kelasRow] = await fastify.mysql.akad.query(
+            `SELECT * FROM jbsakad.kelas LIMIT 3`
+          );
+          kelasData = kelasRow;
+        }
+
+        return reply.send({
+          status: 'debug_info',
+          nis,
+          siswaRow,
+          idkelas,
+          jbsakad_kelas_columns: kelasCols,
+          kelas_data_row: kelasData
+        });
+      } catch (err) {
+        return reply.send({
+          status: 'debug_error',
+          pesan: err.message,
+          stack: err.stack
+        });
+      }
+    }
+
     try {
       // 1. Ambil data Siswa dengan relasi Kelas untuk mendapatkan kode kelas
       let siswa = { nama: '', nis: '', nisn: '', kelas: '-', tahunajaran: '2025/2026' };
@@ -96,57 +141,163 @@ module.exports = function (fastify, opts, next) {
           console.warn('Gagal memuat data kehadiran:', err.message);
       }
 
-      // 5. Ambil data wali kelas berdasarkan kelas aktif siswa secara sangat aman & multi-schema
+      // 5. Ambil data wali kelas berdasarkan kelas aktif siswa secara sangat aman & multi-schema dengan tracing detail
       let waliKelas = { nama: 'WALI KELAS', nip: '-' };
+      let traceLogs = [];
+      
       try {
-          let nipWali = null;
-          // Ambil NIP wali kelas dari jbsakad.kelas
+          // A. Jelajahi database untuk menemukan skema yang tersedia
+          try {
+              const [schemas] = await fastify.mysql.akad.query(`SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA`);
+              const schemaNames = schemas.map(s => s.SCHEMA_NAME || s.schema_name);
+              traceLogs.push(`Skema DB Tersedia: ${schemaNames.join(', ')}`);
+          } catch (eSchema) {
+              traceLogs.push(`Gagal membaca INFORMATION_SCHEMA: ${eSchema.message}`);
+          }
+
+          let kelasRow = null;
+          // Ambil kelasRow dengan join k.* yang sangat safe dari jbsakad.kelas
           try {
               const [kelasRes] = await fastify.mysql.akad.query(
-                  `SELECT k.nipwali, k.nipwalikelas
+                  `SELECT k.* 
                    FROM jbsakad.siswa s 
                    JOIN jbsakad.kelas k ON s.idkelas = k.replid 
                    WHERE s.nis = ? LIMIT 1`,
                   [nis]
               );
               if (kelasRes && kelasRes.length > 0) {
-                  nipWali = kelasRes[0].nipwali || kelasRes[0].nipwalikelas;
+                  kelasRow = kelasRes[0];
+                  traceLogs.push(`kelasRow ketemu via JOIN: ${JSON.stringify(kelasRow)}`);
+              } else {
+                  traceLogs.push(`kelasRow kosong via JOIN untuk NIS: ${nis}`);
               }
-          } catch (e) {
-              console.warn('Gagal mengambil NIP wali dari jbsakad.kelas:', e.message);
+          } catch (errJoin) {
+              traceLogs.push(`Gagal dengan query JOIN k.*: ${errJoin.message}`);
+              // Fallback: ambil idkelas dari siswa, lalu cari kelas
+              try {
+                  const [siswaInfo] = await fastify.mysql.akad.query(
+                      `SELECT idkelas FROM jbsakad.siswa WHERE nis = ? LIMIT 1`,
+                      [nis]
+                  );
+                  if (siswaInfo && siswaInfo.length > 0 && siswaInfo[0].idkelas) {
+                      const idKelas = siswaInfo[0].idkelas;
+                      traceLogs.push(`Siswa idkelas: ${idKelas}`);
+                      const [kelasResDirect] = await fastify.mysql.akad.query(
+                          `SELECT * FROM jbsakad.kelas WHERE replid = ? LIMIT 1`,
+                          [idKelas]
+                      );
+                      if (kelasResDirect && kelasResDirect.length > 0) {
+                          kelasRow = kelasResDirect[0];
+                          traceLogs.push(`kelasRow ketemu via Direct replid: ${JSON.stringify(kelasRow)}`);
+                      } else {
+                          traceLogs.push(`kelasRow kosong untuk replid: ${idKelas}`);
+                      }
+                  } else {
+                      traceLogs.push(`Siswa info tidak ditemukan / idkelas kosong untuk NIS: ${nis}`);
+                  }
+              } catch (errFallback) {
+                  traceLogs.push(`Gagal fallback idkelas: ${errFallback.message}`);
+              }
           }
 
-          if (nipWali) {
-              const nipStr = String(nipWali).trim();
-              waliKelas.nip = nipStr;
+          if (kelasRow) {
+              // Ambil NIP wali kelas secara multi-kolom
+              const nipWali = kelasRow.nipwali || 
+                              kelasRow.nipwalikelas || 
+                              kelasRow.nip_walikelas || 
+                              kelasRow.idwalikelas || 
+                              kelasRow.idwali || 
+                              kelasRow.nip_wali_kelas || 
+                              kelasRow.idguru || 
+                              kelasRow.guru_nip ||
+                              kelasRow.wali_nip ||
+                              kelasRow.nip ||
+                              kelasRow.wali;
+                              
+              // Ambil nama wali kelas langsung jika tertulis di kolom kelasRow
+              const namaWaliLangsung = kelasRow.walikelas || 
+                                       kelasRow.nama_wali || 
+                                       kelasRow.nama_walikelas || 
+                                       kelasRow.wali || 
+                                       kelasRow.nama_guru || 
+                                       kelasRow.guru;
+                                       
+              traceLogs.push(`nipWali terdeteksi: "${nipWali}", namaWaliLangsung terdeteksi: "${namaWaliLangsung}"`);
 
-              // Cari nama pegawai/guru berdasarkan NIP pada beberapa skema DB JBS secara berurutan (jbssdm, jbsadm, jbsakad)
-              let pegawaiFound = false;
-              const targetSchemas = ['jbssdm', 'jbsadm', 'jbsakad'];
-              for (const schema of targetSchemas) {
-                  try {
-                      const [pegRes] = await fastify.mysql.akad.query(
-                          `SELECT nama, gelarakhir FROM ${schema}.pegawai WHERE nip = ? LIMIT 1`,
-                          [nipStr]
-                      );
-                      if (pegRes && pegRes.length > 0 && pegRes[0].nama) {
-                          const item = pegRes[0];
-                          const canGelar = item.gelarakhir ? `, ${item.gelarakhir}` : '';
-                          waliKelas.nama = `${item.nama.trim()}${canGelar}`.toUpperCase();
-                          pegawaiFound = true;
-                          break;
-                      }
-                  } catch (errSchema) {
-                      // Jika skema ini gagal, lanjut ke skema berikutnya
-                  }
+              if (namaWaliLangsung) {
+                  waliKelas.nama = String(namaWaliLangsung).trim().toUpperCase();
               }
+              if (nipWali) {
+                  waliKelas.nip = String(nipWali).trim();
+              }
+              
+              if (nipWali) {
+                  const nipStr = String(nipWali).trim();
 
-              if (!pegawaiFound) {
-                  console.warn(`NIP Wali kelas ditemukan (${nipStr}) tetapi profil nama tidak ditemukan di jbssdm/jbsadm/jbsakad`);
+                  // Cari nama pegawai/guru berdasarkan NIP pada beberapa skema DB JBS secara berurutan (jbssdm, jbsadm, jbsakad)
+                  let pegawaiFound = false;
+                  const targetSchemas = ['jbssdm', 'jbsadm', 'jbsakad', 'jikas_sdm', 'sdm', 'pegawai'];
+                  
+                  for (const schema of targetSchemas) {
+                      try {
+                          // Ambil * untuk menghindari error kolom gelarakhir yang tidak ada
+                          let [pegRes] = await fastify.mysql.akad.query(
+                              `SELECT * FROM ${schema}.pegawai WHERE nip = ? LIMIT 1`,
+                              [nipStr]
+                          );
+                          
+                          traceLogs.push(`Coba skema ${schema} dengan NIP "${nipStr}": ${pegRes ? pegRes.length : 0} baris.`);
+                          
+                          // Jika belum ketemu dengan nip = nipStr, coba cari dengan sql replid jika nipStr berupa angka/ID
+                          if ((!pegRes || pegRes.length === 0) && /^\d+$/.test(nipStr)) {
+                              [pegRes] = await fastify.mysql.akad.query(
+                                  `SELECT * FROM ${schema}.pegawai WHERE replid = ? LIMIT 1`,
+                                  [parseInt(nipStr, 10)]
+                              );
+                              traceLogs.push(`Coba skema ${schema} dengan replid "${nipStr}": ${pegRes ? pegRes.length : 0} baris.`);
+                          }
+                          if ((!pegRes || pegRes.length === 0) && /^\d+$/.test(nipStr)) {
+                              [pegRes] = await fastify.mysql.akad.query(
+                                  `SELECT * FROM ${schema}.pegawai WHERE id = ? LIMIT 1`,
+                                  [parseInt(nipStr, 10)]
+                              );
+                              traceLogs.push(`Coba skema ${schema} dengan id "${nipStr}": ${pegRes ? pegRes.length : 0} baris.`);
+                          }
+
+                          if (pegRes && pegRes.length > 0 && pegRes[0].nama) {
+                              const item = pegRes[0];
+                              const gelar = item.gelarakhir || item.gelar || item.gelar_belakang || '';
+                              const canGelar = gelar ? `, ${gelar}` : '';
+                              waliKelas.nama = `${item.nama.trim()}${canGelar}`.toUpperCase();
+                              
+                              if (item.nip) {
+                                  waliKelas.nip = String(item.nip).trim();
+                              }
+                              
+                              pegawaiFound = true;
+                              traceLogs.push(`Ketemu pegawai di ${schema}: ${waliKelas.nama} (NIP: ${waliKelas.nip})`);
+                              break;
+                          }
+                      } catch (errSchema) {
+                          traceLogs.push(`Gagal query skema ${schema}: ${errSchema.message}`);
+                      }
+                  }
+
+                  // Jika pegawai tidak ditemukan di mana pun, mari kita coba jelajahi salah satu tabel pegawai untuk debugging dsb
+                  if (!pegawaiFound) {
+                      traceLogs.push(`Pegawai NIP "${nipStr}" tidak ditemukan di database dengan query standar.`);
+                      // Coba Ambil data sampel pegawai jbssdm
+                      try {
+                          const [sampelPeg] = await fastify.mysql.akad.query(`SELECT * FROM jbssdm.pegawai LIMIT 2`);
+                          traceLogs.push(`Sampel tabel jbssdm.pegawai: ${JSON.stringify(sampelPeg)}`);
+                      } catch (errSampel) {
+                          traceLogs.push(`Gagal mengambil sampel jbssdm.pegawai: ${errSampel.message}`);
+                      }
+                  }
               }
           }
       } catch (err) {
-          console.warn('Sistem gagal memuat profil wali kelas:', err.message);
+          traceLogs.push(`Sistem gagal memuat profil wali kelas secara total: ${err.message}`);
       }
 
       // Helper Fungsi untuk Terjemahan Nilai ke Kata Bahasa Indonesia (Nilai Huruf)
@@ -196,6 +347,11 @@ module.exports = function (fastify, opts, next) {
         @page { 
             size: 8.5in 13in; 
             margin: 0.4in 0.5in; 
+        }
+        @media print {
+            .no-print {
+                display: none !important;
+            }
         }
         body { 
             font-family: Arial, sans-serif; 

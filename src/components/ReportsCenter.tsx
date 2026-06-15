@@ -69,7 +69,8 @@ export default function ReportsCenter({
 
   const printUrl = useMemo(() => {
     if (!activePrintStudent) return '#';
-    return `${window.location.origin}${window.location.pathname}?print-nis=${activePrintStudent.nis}&print-class=${activePrintStudent.kelas}`;
+    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'https://fastify.nganjuk.net';
+    return `${apiBaseUrl}/api/rapor/print/terpadu/${activePrintStudent.nis}`;
   }, [activePrintStudent]);
 
   // 1. Get list of classes and subjects for filtering
@@ -343,6 +344,30 @@ export default function ReportsCenter({
     return 'D (Perlu Bimbingan)';
   }, [averageNilai]);
 
+  const handleOpenPrintModal = () => {
+    const fallbackClasses = Array.from(new Set(students.map(s => s.kelas))).sort();
+    const activeClassList = printClassesList.length > 0 ? printClassesList : fallbackClasses;
+    
+    // Determine target class: use current filter selectedClass or the first class
+    const initialClass = selectedClass || activeClassList[0] || '';
+    setPrintSelectedClass(initialClass);
+
+    // Determine target student: first student in that class
+    if (initialClass) {
+      const targetList = printableList.length > 0 ? printableList : students;
+      const classStudents = targetList.filter(s => s.kelas === initialClass);
+      if (classStudents.length > 0) {
+        setPrintNis(classStudents[0].nis);
+      } else {
+        setPrintNis('');
+      }
+    } else {
+      setPrintNis('');
+    }
+
+    setPrintModalOpen(true);
+  };
+
   const handleTriggerPrint = () => {
     if (!printNis) {
       addToast('Luncurkan siswa terlebih dahulu untuk dicetak!', 'error');
@@ -384,7 +409,7 @@ export default function ReportsCenter({
             <span>Ekspor PDF</span>
           </button>
           <button
-            onClick={() => setPrintModalOpen(true)}
+            onClick={handleOpenPrintModal}
             className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-900 text-white hover:bg-slate-800 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-md"
           >
             <Printer className="w-4 h-4" />
@@ -469,8 +494,25 @@ export default function ReportsCenter({
                   return (
                     <tr key={`${g.nis}-${g.idpelajaran}-${idx}`} className="hover:bg-slate-50/50 text-xs transition-all bg-white font-medium text-slate-700">
                       <td className="py-3 px-6">
-                        <div className="font-bold text-slate-800">{s?.nama || 'N/A'}</div>
-                        <div className="text-[10px] text-slate-400 mt-0.5 font-mono">NIS: {g.nis}</div>
+                        <div className="flex items-center justify-between gap-3 group">
+                          <div>
+                            <div className="font-bold text-slate-800">{s?.nama || 'N/A'}</div>
+                            <div className="text-[10px] text-slate-400 mt-0.5 font-mono">NIS: {g.nis}</div>
+                          </div>
+                          {s && (
+                            <button
+                              onClick={() => {
+                                setPrintSelectedClass(s.kelas);
+                                setPrintNis(s.nis);
+                                setPrintModalOpen(true);
+                              }}
+                              className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all cursor-pointer opacity-80 md:opacity-0 group-hover:opacity-100 shrink-0"
+                              title={`Cetak Rapor ${s.nama}`}
+                            >
+                              <Printer className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
                       </td>
                       <td className="py-3 px-4 text-slate-500 font-medium">Kelas {s?.kelas || '-'}</td>
                       <td className="py-3 px-4 text-slate-700 font-semibold">
@@ -1108,7 +1150,7 @@ export default function ReportsCenter({
                 <div className="text-center w-64">
                   <p className="font-bold text-black">.......................................................</p>
                 </div>
-                <div className="text-center w-64 pr-2">
+                <div className="text-center w-64 pr-2 text-black">
                   <p className="font-extrabold underline uppercase">{resolvedWaliKelas.nama}</p>
                 </div>
               </div>

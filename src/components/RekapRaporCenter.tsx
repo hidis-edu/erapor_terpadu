@@ -542,6 +542,15 @@ export default function RekapRaporCenter({
                             </div>
                           ) : (
                             <div className="flex items-center justify-center gap-1">
+                              <a
+                                href={`${import.meta.env.VITE_API_BASE_URL || 'https://fastify.nganjuk.net'}/api/rapor/print/terpadu/${item.nis}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="p-1.5 text-[#325c42] hover:text-[#254632] hover:bg-emerald-50 rounded-lg transition-all inline-flex items-center justify-center cursor-pointer"
+                                title="Cetak/Print Rapor Siswa Langsung (PDF)"
+                              >
+                                <Printer className="w-4 h-4" />
+                              </a>
                               <button
                                 onClick={() => handleOpenSendWa(item)}
                                 className="p-1.5 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-all inline-flex items-center justify-center cursor-pointer"
