@@ -534,6 +534,23 @@ module.exports = function (fastify, opts, next) {
     </style>
 </head>
 <body>
+    <!-- Floating Action Bar / Menu Utama (Hanya terlihat di layar komputer/HP, otomatis tersembunyi saat diprint/save PDF) -->
+    <div class="no-print" style="position: sticky; top: 0; left: 0; right: 0; background: #0f172a; color: #ffffff; padding: 10px 20px; box-shadow: 0 4px 12px rbg(0 0 0 / 0.15); z-index: 99999; display: flex; align-items: center; justify-between: space-between; justify-content: space-between; font-family: system-ui, -apple-system, sans-serif;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="background: #10b981; width: 8px; height: 8px; border-radius: 50%; animate: pulse 2s infinite;"></span>
+            <span style="font-size: 12.5px; font-weight: 600; letter-spacing: 0.3px; color: #f8fafc;">E-Rapor Terpadu - Mode Cetak & PDF</span>
+        </div>
+        <div style="display: flex; gap: 10px;">
+            <button onclick="window.print()" style="background: #10b981; color: #ffffff; border: none; padding: 6px 14px; border-radius: 5px; font-size: 11.5px; font-weight: bold; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 2px 4px rgba(16, 185, 129, 0.2); transition: all 0.2s;">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect><path d="M6 9V2h12v7"></path></svg>
+                Cetak Rapor / Simpan PDF
+            </button>
+            <button onclick="window.close()" style="background: #334155; color: #e2e8f0; border: none; padding: 6px 12px; border-radius: 5px; font-size: 11px; font-weight: 500; cursor: pointer; transition: all 0.2s;">
+                Tutup Halaman
+            </button>
+        </div>
+    </div>
+
   <div class="outer-border">
     <div>
         <!-- Kop Instansi Pendidikan -->
@@ -699,6 +716,15 @@ module.exports = function (fastify, opts, next) {
         </div>
     </div>
   </div>
+  
+  <script>
+    // Otomatis memicu dialog cetak/PDF setelah seluruh halaman termuat sempurna (dengan jeda singkat)
+    window.addEventListener('DOMContentLoaded', () => {
+        setTimeout(() => {
+            window.print();
+        }, 500);
+    });
+  </script>
 </body>
 </html>`;
 
