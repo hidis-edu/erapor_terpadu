@@ -31,7 +31,7 @@ export default function ReportsCenter({
   const [selectedSubjectId, setSelectedSubjectId] = useState('');
   
   // Real-time fetched Wali Kelas information
-  const [loadedWali, setLoadedWali] = useState<{ nama: string; NIP: string } | null>(null);
+  const [loadedWali, setLoadedWali] = useState<{ nama: string; nip: string } | null>(null);
   const [lastFetchedNip, setLastFetchedNip] = useState<string>('');
 
   // Modal for direct printing of report cards
@@ -178,26 +178,54 @@ export default function ReportsCenter({
   }, [printNis, attendances]);
 
   const resolvedWaliKelas = useMemo(() => {
-    if (loadedWali) {
-      return loadedWali;
-    }
+    // 1. Resolve from activeClasses first as the primary reliable baseline (since it contains the name from /api/jbsakad/kelas/aktif)
+    let classWali = { nama: 'WALI KELAS', nip: '-' };
+    
     if (activePrintStudent && activePrintStudent.kelas) {
       const cleanClass = String(activePrintStudent.kelas).replace(/\s+/g, '').toUpperCase();
+      const studentClassId = String((activePrintStudent as any).idkelas || '').trim();
+
       const found = (activeClasses || []).find((c: any) => {
         if (!c) return false;
-        const cName = String(c.kelas || c.idkelas || c.nama || '').replace(/\s+/g, '').toUpperCase();
-        return cName === cleanClass || cName.includes(cleanClass) || cleanClass.includes(cName);
+        
+        const classReplId = String(c.replid || '').trim();
+        const className = String(c.kelas || '').replace(/\s+/g, '').toUpperCase();
+        
+        // Match by numeric ID (student.idkelas or student.kelas matches class.replid)
+        if (classReplId && (studentClassId === classReplId || cleanClass === classReplId)) {
+          return true;
+        }
+        // Match by exact class name
+        if (className && className === cleanClass) {
+          return true;
+        }
+        // Loose inclusion
+        if (className && cleanClass && (className.includes(cleanClass) || cleanClass.includes(className))) {
+          return true;
+        }
+        return false;
       });
+
       if (found) {
         const nip = found.nipwali || found.nipwalikelas || found.nip_walikelas || found.nip || found.idwalikelas || found.nip_wali_kelas || found.idguru || found.nik || found.guru_nip || found.wali_nip;
-        const nama = found.walikelas || found.wali || found.nama_walikelas || found.nama_guru || found.nama || found.guru;
-        return {
-          nama: nama ? String(nama).trim().toUpperCase() : 'MEMUAT PROFILE GURU...',
-          NIP: nip ? String(nip).trim() : '-'
+        const nama = found.nama || found.walikelas || found.wali || found.nama_walikelas || found.nama_guru || found.guru;
+        classWali = {
+          nama: nama ? String(nama).trim().toUpperCase() : 'WALI KELAS',
+          nip: nip ? String(nip).trim() : '-'
         };
       }
     }
-    return { nama: 'WALI KELAS', NIP: '-' };
+
+    // 2. If background loadedWali has a completed rich profile name, override/enrich it!
+    if (loadedWali && 
+        loadedWali.nama && 
+        loadedWali.nama !== 'WALI KELAS' && 
+        loadedWali.nama !== 'SEDANG MEMUAT...' && 
+        loadedWali.nama !== 'MEMUAT PROFILE GURU...') {
+      return loadedWali;
+    }
+
+    return classWali;
   }, [activePrintStudent, activeClasses, loadedWali]);
 
   useEffect(() => {
@@ -208,10 +236,26 @@ export default function ReportsCenter({
     }
 
     const cleanClass = String(activePrintStudent.kelas).replace(/\s+/g, '').toUpperCase();
+    const studentClassId = String((activePrintStudent as any).idkelas || '').trim();
+
     const found = (activeClasses || []).find((c: any) => {
       if (!c) return false;
-      const cName = String(c.kelas || c.idkelas || c.nama || '').replace(/\s+/g, '').toUpperCase();
-      return cName === cleanClass || cName.includes(cleanClass) || cleanClass.includes(cName);
+      const classReplId = String(c.replid || '').trim();
+      const className = String(c.kelas || '').replace(/\s+/g, '').toUpperCase();
+      
+      // Match by ReplId first if numeric class matches
+      if (classReplId && (cleanClass === classReplId || studentClassId === classReplId)) {
+        return true;
+      }
+      // Match by exact class name
+      if (className && className === cleanClass) {
+        return true;
+      }
+      // Loose inclusion
+      if (className && cleanClass && (className.includes(cleanClass) || cleanClass.includes(className))) {
+        return true;
+      }
+      return false;
     });
 
     const nip = found ? (
@@ -228,7 +272,7 @@ export default function ReportsCenter({
     ) : null;
 
     if (!nip) {
-      setLoadedWali({ nama: 'WALI KELAS', NIP: '-' });
+      setLoadedWali(null);
       setLastFetchedNip('');
       return;
     }
@@ -241,13 +285,7 @@ export default function ReportsCenter({
     setLastFetchedNip(nipStr);
     const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'https://fastify.nganjuk.net';
     
-    // Set placeholder first with NIP so it shows immediately
-    const cachedNama = found ? (found.walikelas || found.wali || found.nama_walikelas || found.nama_guru || found.nama || found.guru) : '';
-    setLoadedWali({
-      nama: cachedNama ? String(cachedNama).trim().toUpperCase() : 'SEDANG MEMUAT...',
-      NIP: nipStr
-    });
-
+    // Background fetch for further details (e.g. academic title)
     fetch(`${apiBaseUrl}/api/jbssdm/pegawai/${nipStr}`)
       .then(async (res) => {
         if (res.ok) {
@@ -274,7 +312,7 @@ export default function ReportsCenter({
             const cleanGelar = gelar ? `, ${gelar}` : '';
             setLoadedWali({
               nama: `${String(fetchedNama).trim()}${cleanGelar}`.toUpperCase(),
-              NIP: nipStr
+              nip: nipStr
             });
           }
         }
