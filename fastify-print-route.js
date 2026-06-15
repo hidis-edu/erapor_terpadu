@@ -346,7 +346,7 @@ module.exports = function (fastify, opts, next) {
     <style>
         @page { 
             size: 8.5in 13in; 
-            margin: 0.4in 0.5in; 
+            margin: 0; 
         }
         @media print {
             .no-print {
@@ -361,6 +361,11 @@ module.exports = function (fastify, opts, next) {
             padding: 0; 
             font-size: 11px;
             line-height: 1.35;
+        }
+        .print-container {
+            padding: 0.4in 0.5in;
+            box-sizing: border-box;
+            width: 100%;
         }
         .outer-border {
             border: 3px solid #4a6b53; 
@@ -551,7 +556,8 @@ module.exports = function (fastify, opts, next) {
         </div>
     </div>
 
-  <div class="outer-border">
+    <div class="print-container">
+      <div class="outer-border">
     <div>
         <!-- Kop Instansi Pendidikan -->
         <div class="kop">
@@ -716,6 +722,7 @@ module.exports = function (fastify, opts, next) {
         </div>
     </div>
   </div>
+</div>
   
   <script>
     // Otomatis memicu dialog cetak/PDF setelah seluruh halaman termuat sempurna (dengan jeda singkat)
