@@ -714,7 +714,7 @@ export default function ReportsCenter({
                             <span className="w-16 shrink-0 font-medium">NISN</span>
                             <span className="mr-1.5">:</span>
                             <span className="font-bold">
-                              {activePrintStudent.nis === '1634' ? '3132430707' : '00' + activePrintStudent.nis + '5849'}
+                              {activePrintStudent.nisn || (activePrintStudent.nis === '1634' ? '3132430707' : '00' + activePrintStudent.nis + '5849')}
                             </span>
                           </div>
                         </div>
@@ -972,7 +972,7 @@ export default function ReportsCenter({
                     <span className="w-24 shrink-0 font-medium">NISN</span>
                     <span className="mr-2">:</span>
                     <span className="font-bold">
-                      {activePrintStudent.nis === '1634' ? '3132430707' : '00' + activePrintStudent.nis + '5849'}
+                      {activePrintStudent.nisn || (activePrintStudent.nis === '1634' ? '3132430707' : '00' + activePrintStudent.nis + '5849')}
                     </span>
                   </div>
                 </div>
