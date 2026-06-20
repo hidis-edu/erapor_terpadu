@@ -486,15 +486,16 @@ export default function App() {
   };
 
   const handleDeletePersonality = async (nis: string) => {
+    const cleanNis = String(nis).trim().toUpperCase();
     setPersonalities((prev) => {
-      const filtered = prev.filter(p => p.nis !== nis);
+      const filtered = prev.filter(p => String(p.nis).trim().toUpperCase() !== cleanNis);
       localStorage.setItem('personalities', JSON.stringify(filtered));
       return filtered;
     });
 
     try {
       const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'https://fastify.nganjuk.net';
-      await fetch(`${apiBaseUrl}/api/rapor/kepribadian?nis=${nis}`, {
+      await fetch(`${apiBaseUrl}/api/rapor/kepribadian?nis=${encodeURIComponent(cleanNis)}`, {
         method: 'DELETE'
       });
     } catch (e) {
@@ -581,8 +582,9 @@ export default function App() {
   };
 
   const handleDeleteAttendance = async (nis: string, replid?: number) => {
+    const cleanNis = String(nis).trim().toUpperCase();
     setAttendances((prev) => {
-      const filtered = prev.filter(a => !(a.nis === nis && (replid ? a.replid === replid : true)));
+      const filtered = prev.filter(a => !(String(a.nis).trim().toUpperCase() === cleanNis && (replid ? a.replid === replid : true)));
       localStorage.setItem('attendances', JSON.stringify(filtered));
       return filtered;
     });

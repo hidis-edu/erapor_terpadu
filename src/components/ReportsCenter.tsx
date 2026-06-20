@@ -882,7 +882,7 @@ export default function ReportsCenter({
                           <p className="font-bold">Orang Tua Wali</p>
                         </div>
                         <div className="text-center w-40">
-                          <p>Jakarta, 2 Juni 2026</p>
+                          <p>Jakarta, 26 Juni 2026</p>
                           <p className="font-bold">Guru Terpadu {activePrintStudent.kelas}</p>
                         </div>
                       </div>
@@ -1140,7 +1140,7 @@ export default function ReportsCenter({
                   <p className="font-bold">Orang Tua Wali</p>
                 </div>
                 <div className="text-center w-64 pr-2">
-                  <p>Jakarta, 2 Juni 2026</p>
+                  <p>Jakarta, 26 Juni 2026</p>
                   <p className="font-bold">Guru Terpadu {activePrintStudent.kelas}</p>
                 </div>
               </div>

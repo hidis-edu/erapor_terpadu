@@ -710,7 +710,7 @@ module.exports = function (fastify, opts, next) {
                 <p style="margin-top: 40px; font-weight: bold;">.......................................................</p>
             </div>
             <div class="sig-col">
-                <p>Jakarta, 2 Juni 2026</p>
+                <p>Jakarta, 26 Juni 2026</p>
                 <p class="font-bold">Guru Terpadu ${siswa.kelas || '-'}</p>
                 <p class="sig-name">${waliKelas.nama}</p>
             </div>

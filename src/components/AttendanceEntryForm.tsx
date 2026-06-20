@@ -170,12 +170,14 @@ export default function AttendanceEntryForm({
   };
 
   const getStudentName = (nis: string) => {
-    const s = students.find(stud => stud.nis === nis);
+    const cleanSearch = String(nis).trim().toUpperCase();
+    const s = students.find(stud => String(stud.nis).trim().toUpperCase() === cleanSearch);
     return s ? s.nama : 'Siswa Tidak Diketahui';
   };
 
   const getStudentClass = (nis: string) => {
-    const s = students.find(stud => stud.nis === nis);
+    const cleanSearch = String(nis).trim().toUpperCase();
+    const s = students.find(stud => String(stud.nis).trim().toUpperCase() === cleanSearch);
     return s ? `Kelas ${s.kelas}` : '-';
   };
 
@@ -461,74 +463,98 @@ export default function AttendanceEntryForm({
         </div>
 
         {attendances.length > 0 ? (
-          <div className="space-y-3 max-h-120 overflow-y-auto pr-1">
-            {attendances.map((item, idx) => (
-              <div 
-                key={`${item.replid || 'att'}-${idx}`} 
-                className="border border-slate-100 rounded-xl p-3.5 hover:bg-slate-50/70 transition-all flex flex-col gap-2.5 bg-white shadow-xs"
-              >
-                <div className="flex items-start justify-between">
-                  <div>
-                    <span className="text-xs font-bold text-slate-800 block">
-                      {getStudentName(item.nis)}
+          <div className="space-y-6 max-h-120 overflow-y-auto pr-1">
+            {Object.entries(
+              attendances.reduce((acc, item) => {
+                const rawClass = getStudentClass(item.nis);
+                const className = rawClass !== '-' ? rawClass : 'Kelas Tidak Diketahui';
+                if (!acc[className]) {
+                  acc[className] = [];
+                }
+                acc[className].push(item);
+                return acc;
+              }, {} as Record<string, typeof attendances>)
+            )
+              .sort(([a], [b]) => a.localeCompare(b))
+              .map(([className, classItems]) => (
+                <div key={className} className="space-y-2 border-b border-dashed border-slate-100 pb-4 last:border-0 last:pb-0">
+                  <div className="flex items-center gap-2 sticky top-0 bg-white py-1.5 z-10">
+                    <span className="text-[11px] font-black text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-100 uppercase tracking-wider">
+                      {className}
                     </span>
-                    <span className="text-[9px] font-semibold text-slate-400 block mt-0.5">
-                      NIS: {item.nis} • {getStudentClass(item.nis)}
-                    </span>
-                    <span className="inline-block mt-1 text-[8.5px] px-1.5 py-0.5 font-bold rounded bg-slate-100 text-slate-500 uppercase">
-                      Semester {item.idsemester === 34 ? '1 (Ganjil)' : '2 (Genap)'}
-                    </span>
+                    <span className="text-[10px] font-bold text-slate-400">({classItems.length} siswa)</span>
                   </div>
-                  
-                  <div className="flex items-center gap-2 shrink-0">
-                    <button
-                      onClick={() => handleEditClick(item)}
-                      className="p-1 hover:bg-emerald-50 text-emerald-600 rounded transition-all cursor-pointer"
-                      title="Edit Kehadiran"
-                    >
-                      <Edit3 className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={async () => {
-                        if (confirm(`Hapus data kehadiran untuk murid ${getStudentName(item.nis)}?`)) {
-                          try {
-                            await onDeleteAttendance(item.nis, item.replid);
-                            addToast('✔️ Data absensi sukses dibuang dari rekap!', 'success');
-                          } catch (err) {
-                            addToast('Gagal menghapus data absensi!', 'error');
-                          }
-                        }
-                      }}
-                      className="p-1 hover:bg-rose-50 text-rose-500 rounded transition-all cursor-pointer"
-                      title="Hapus Kehadiran"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                  <div className="space-y-3">
+                    {classItems.map((item, idx) => (
+                      <div 
+                        key={`${item.replid || 'att'}-${idx}`} 
+                        className="border border-slate-100 rounded-xl p-3.5 hover:bg-slate-50/70 transition-all flex flex-col gap-2.5 bg-white shadow-xs"
+                      >
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <span className="text-xs font-bold text-slate-800 block">
+                              {getStudentName(item.nis)}
+                            </span>
+                            <span className="text-[9px] font-semibold text-slate-400 block mt-0.5">
+                              NIS: {item.nis} • {getStudentClass(item.nis)}
+                            </span>
+                            <span className="inline-block mt-1 text-[8.5px] px-1.5 py-0.5 font-bold rounded bg-slate-100 text-slate-500 uppercase">
+                              Semester {item.idsemester === 34 ? '1 (Ganjil)' : '2 (Genap)'}
+                            </span>
+                          </div>
+                          
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button
+                              onClick={() => handleEditClick(item)}
+                              className="p-1 hover:bg-emerald-50 text-emerald-600 rounded transition-all cursor-pointer"
+                              title="Edit Kehadiran"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={async () => {
+                                if (confirm(`Hapus data kehadiran untuk murid ${getStudentName(item.nis)}?`)) {
+                                  try {
+                                    await onDeleteAttendance(item.nis, item.replid);
+                                    addToast('✔️ Data absensi sukses dibuang dari rekap!', 'success');
+                                  } catch (err) {
+                                    addToast('Gagal menghapus data absensi!', 'error');
+                                  }
+                                }
+                              }}
+                              className="p-1 hover:bg-rose-50 text-rose-500 rounded transition-all cursor-pointer"
+                              title="Hapus Kehadiran"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-2 text-center text-[10.5px] font-black">
+                          <div className="p-1.5 border border-amber-100 bg-amber-50/30 rounded-lg text-amber-800">
+                            <p className="text-[8.5px] font-bold opacity-75 uppercase">Sakit</p>
+                            <p className="text-sm mt-0.5">{item.sakit} hari</p>
+                          </div>
+                          <div className="p-1.5 border border-sky-100 bg-sky-50/30 rounded-lg text-sky-800">
+                            <p className="text-[8.5px] font-bold opacity-75 uppercase">Izin</p>
+                            <p className="text-sm mt-0.5">{item.izin} hari</p>
+                          </div>
+                          <div className="p-1.5 border border-rose-100 bg-rose-50/30 rounded-lg text-rose-800">
+                            <p className="text-[8.5px] font-bold opacity-75 uppercase">Alpa</p>
+                            <p className="text-sm mt-0.5">{item.alpa} hari</p>
+                          </div>
+                        </div>
+
+                        {item.catatan && (
+                          <div className="bg-slate-50 p-2.5 rounded border border-slate-100 text-[10px] text-slate-500 leading-relaxed italic">
+                            "{item.catatan}"
+                          </div>
+                        )}
+                      </div>
+                    ))}
                   </div>
                 </div>
-
-                <div className="grid grid-cols-3 gap-2 text-center text-[10.5px] font-black">
-                  <div className="p-1.5 border border-amber-100 bg-amber-50/30 rounded-lg text-amber-800">
-                    <p className="text-[8.5px] font-bold opacity-75 uppercase">Sakit</p>
-                    <p className="text-sm mt-0.5">{item.sakit} hari</p>
-                  </div>
-                  <div className="p-1.5 border border-sky-100 bg-sky-50/30 rounded-lg text-sky-800">
-                    <p className="text-[8.5px] font-bold opacity-75 uppercase">Izin</p>
-                    <p className="text-sm mt-0.5">{item.izin} hari</p>
-                  </div>
-                  <div className="p-1.5 border border-rose-100 bg-rose-50/30 rounded-lg text-rose-800">
-                    <p className="text-[8.5px] font-bold opacity-75 uppercase">Alpa</p>
-                    <p className="text-sm mt-0.5">{item.alpa} hari</p>
-                  </div>
-                </div>
-
-                {item.catatan && (
-                  <div className="bg-slate-50 p-2.5 rounded border border-slate-100 text-[10px] text-slate-500 leading-relaxed italic">
-                    "{item.catatan}"
-                  </div>
-                )}
-              </div>
-            ))}
+              ))}
           </div>
         ) : (
           <div className="text-center py-12 bg-slate-50 rounded-xl px-4 border border-dashed border-slate-200">

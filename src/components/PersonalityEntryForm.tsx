@@ -117,12 +117,14 @@ export default function PersonalityEntryForm({
 
   // Map student name for evaluations already handled
   const getStudentName = (nis: string) => {
-    const s = students.find(stud => stud.nis === nis);
+    const cleanSearch = String(nis).trim().toUpperCase();
+    const s = students.find(stud => String(stud.nis).trim().toUpperCase() === cleanSearch);
     return s ? s.nama : 'Tidak diketahui';
   };
 
   const getStudentClass = (nis: string) => {
-    const s = students.find(stud => stud.nis === nis);
+    const cleanSearch = String(nis).trim().toUpperCase();
+    const s = students.find(stud => String(stud.nis).trim().toUpperCase() === cleanSearch);
     return s ? `Kelas ${s.kelas}` : '-';
   };
 
@@ -378,56 +380,80 @@ export default function PersonalityEntryForm({
         </div>
 
         {personalities.length > 0 ? (
-          <div className="space-y-3 max-h-120 overflow-y-auto pr-1">
-            {personalities.map((item, idx) => (
-              <div 
-                key={`${item.nis}-${idx}`} 
-                className="border border-slate-100 rounded-xl p-3.5 hover:bg-slate-50 transition-all flex flex-col gap-2.5 bg-white"
-              >
-                <div className="flex items-start justify-between">
-                  <div>
-                    <span className="text-xs font-bold text-slate-800 block">
-                      {getStudentName(item.nis)}
+          <div className="space-y-6 max-h-120 overflow-y-auto pr-1">
+            {Object.entries(
+              personalities.reduce((acc, item) => {
+                const rawClass = getStudentClass(item.nis);
+                const className = rawClass !== '-' ? rawClass : 'Kelas Tidak Diketahui';
+                if (!acc[className]) {
+                  acc[className] = [];
+                }
+                acc[className].push(item);
+                return acc;
+              }, {} as Record<string, typeof personalities>)
+            )
+              .sort(([a], [b]) => a.localeCompare(b))
+              .map(([className, classItems]) => (
+                <div key={className} className="space-y-2 border-b border-dashed border-slate-100 pb-4 last:border-0 last:pb-0">
+                  <div className="flex items-center gap-2 sticky top-0 bg-white py-1.5 z-10">
+                    <span className="text-[11px] font-black text-sky-800 bg-sky-50 px-2 py-0.5 rounded-md border border-sky-100 uppercase tracking-wider">
+                      {className}
                     </span>
-                    <span className="text-[9px] font-semibold text-slate-400 block mt-0.5">
-                      NIS: {item.nis} • {getStudentClass(item.nis)}
-                    </span>
+                    <span className="text-[10px] font-bold text-slate-400">({classItems.length} siswa)</span>
                   </div>
-                  {onDeletePersonality && (
-                    <button
-                      onClick={() => {
-                        onDeletePersonality(item.nis);
-                        addToast('✔️ Penilaian sikap berhasil dihapus.', 'success');
-                      }}
-                      className="text-[10px] font-bold text-rose-500 hover:text-rose-700 hover:underline cursor-pointer"
-                    >
-                      Hapus
-                    </button>
-                  )}
-                </div>
+                  <div className="space-y-3">
+                    {classItems.map((item, idx) => (
+                      <div 
+                        key={`${item.nis}-${idx}`} 
+                        className="border border-slate-100 rounded-xl p-3.5 hover:bg-slate-50 transition-all flex flex-col gap-2.5 bg-white"
+                      >
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <span className="text-xs font-bold text-slate-800 block">
+                              {getStudentName(item.nis)}
+                            </span>
+                            <span className="text-[9px] font-semibold text-slate-400 block mt-0.5">
+                              NIS: {item.nis} • {getStudentClass(item.nis)}
+                            </span>
+                          </div>
+                          {onDeletePersonality && (
+                            <button
+                              onClick={() => {
+                                onDeletePersonality(item.nis);
+                                addToast('✔️ Penilaian sikap berhasil dihapus.', 'success');
+                              }}
+                              className="text-[10px] font-bold text-rose-500 hover:text-rose-700 hover:underline cursor-pointer"
+                            >
+                              Hapus
+                            </button>
+                          )}
+                        </div>
 
-                <div className="grid grid-cols-3 gap-2 text-center text-[11px] font-black">
-                  <div className={`p-1.5 border rounded-lg ${scoreBadge(item.ibadah)}`}>
-                    <p className="text-[9px] font-bold opacity-60 uppercase">Ibadah</p>
-                    <p className="text-sm mt-0.5">{item.ibadah}</p>
-                  </div>
-                  <div className={`p-1.5 border rounded-lg ${scoreBadge(item.akhlak)}`}>
-                    <p className="text-[9px] font-bold opacity-60 uppercase">Akhlak</p>
-                    <p className="text-sm mt-0.5">{item.akhlak}</p>
-                  </div>
-                  <div className={`p-1.5 border rounded-lg ${scoreBadge(item.disiplin)}`}>
-                    <p className="text-[9px] font-bold opacity-60 uppercase">Disiplin</p>
-                    <p className="text-sm mt-0.5">{item.disiplin}</p>
+                        <div className="grid grid-cols-3 gap-2 text-center text-[11px] font-black">
+                          <div className={`p-1.5 border rounded-lg ${scoreBadge(item.ibadah)}`}>
+                            <p className="text-[9px] font-bold opacity-60 uppercase">Ibadah</p>
+                            <p className="text-sm mt-0.5">{item.ibadah}</p>
+                          </div>
+                          <div className={`p-1.5 border rounded-lg ${scoreBadge(item.akhlak)}`}>
+                            <p className="text-[9px] font-bold opacity-60 uppercase">Akhlak</p>
+                            <p className="text-sm mt-0.5">{item.akhlak}</p>
+                          </div>
+                          <div className={`p-1.5 border rounded-lg ${scoreBadge(item.disiplin)}`}>
+                            <p className="text-[9px] font-bold opacity-60 uppercase">Disiplin</p>
+                            <p className="text-sm mt-0.5">{item.disiplin}</p>
+                          </div>
+                        </div>
+
+                        {item.catatan && (
+                          <div className="bg-slate-50 p-2.5 rounded border border-slate-100 text-[10.5px] text-slate-500 leading-relaxed italic">
+                            "{item.catatan}"
+                          </div>
+                        )}
+                      </div>
+                    ))}
                   </div>
                 </div>
-
-                {item.catatan && (
-                  <div className="bg-slate-50 p-2.5 rounded border border-slate-100 text-[10.5px] text-slate-500 leading-relaxed italic">
-                    "{item.catatan}"
-                  </div>
-                )}
-              </div>
-            ))}
+              ))}
           </div>
         ) : (
           <div className="text-center py-12 bg-slate-50 rounded-xl px-4 border border-dashed border-slate-200">
