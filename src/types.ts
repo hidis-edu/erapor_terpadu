@@ -4,6 +4,7 @@ export interface Student {
   kelas: string;
   tahunajaran: string;
   hportu?: string;
+  nisn?: string;
 }
 
 export interface Subject {
