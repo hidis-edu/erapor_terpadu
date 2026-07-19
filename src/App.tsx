@@ -29,6 +29,9 @@ export default function App() {
   const [currentTab, setCurrentTab] = useState('dashboard');
   const [currentTeacher, setCurrentTeacher] = useState<Teacher | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [tahunAjaran, setTahunAjaran] = useState(() => {
+    return localStorage.getItem('active_tahun_ajaran') || '2025/2026';
+  });
   const [students, setStudents] = useState<Student[]>([]);
   const [isLoadingStudents, setIsLoadingStudents] = useState(false);
   const [isLoadingGrades, setIsLoadingGrades] = useState(false);
@@ -138,13 +141,13 @@ export default function App() {
     setIsLoading(false);
   }, []);
 
-  // 2. Load API resources (Siswa & Grades) asynchronously
+  // 2a. Load Students API - dependent on dynamic school year
   useEffect(() => {
     async function loadStudentsApi() {
       setIsLoadingStudents(true);
       try {
         const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'https://fastify.nganjuk.net';
-        const response = await fetch(`${apiBaseUrl}/api/jbsakad/siswa?tahunajaran=2025/2026`);
+        const response = await fetch(`${apiBaseUrl}/api/jbsakad/siswa?tahunajaran=${encodeURIComponent(tahunAjaran)}`);
         if (response.ok) {
           const list = await response.json();
           if (Array.isArray(list) && list.length > 0) {
@@ -171,6 +174,11 @@ export default function App() {
       setIsLoadingStudents(false);
     }
 
+    loadStudentsApi();
+  }, [tahunAjaran]);
+
+  // 2b. Load other stable API resources asynchronously
+  useEffect(() => {
     async function loadGradesApi() {
       setIsLoadingGrades(true);
       try {
@@ -289,7 +297,6 @@ export default function App() {
       }
     }
 
-    loadStudentsApi();
     loadGradesApi();
     loadPersonalitiesApi();
     loadAttendancesApi();
@@ -772,6 +779,27 @@ export default function App() {
           </div>
           
           <div className="flex items-center gap-4">
+            {/* School Year Select Dropdown */}
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider hidden md:inline">TA:</span>
+              <select
+                id="tahunajaran-select"
+                value={tahunAjaran}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setTahunAjaran(val);
+                  localStorage.setItem('active_tahun_ajaran', val);
+                  addToast(`Tahun Ajaran diubah ke ${val}`, 'success');
+                }}
+                className="text-xs font-bold bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-800 rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer transition-colors"
+              >
+                <option value="2026/2027">2026/2027</option>
+                <option value="2025/2026">2025/2026</option>
+                <option value="2024/2025">2024/2025</option>
+                <option value="2023/2024">2023/2024</option>
+              </select>
+            </div>
+
             <div className="relative p-1 px-2.5 py-1 text-xs font-bold font-mono bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-lg shrink-0">
               ● Aktif Ganjil
             </div>
