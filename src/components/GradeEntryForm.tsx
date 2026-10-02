@@ -12,6 +12,7 @@ interface GradeEntryFormProps {
   subjects: Subject[];
   currentTeacher: Teacher;
   grades: Grade[];
+  tahunAjaran?: string;
   onSaveGrade: (grade: Grade) => void;
   onDeleteGrade?: (nis: string, idpelajaran: number) => void;
   addToast: (message: string, type: 'success' | 'error') => void;
@@ -22,6 +23,7 @@ export default function GradeEntryForm({
   subjects,
   currentTeacher,
   grades,
+  tahunAjaran,
   onSaveGrade,
   onDeleteGrade,
   addToast
@@ -44,7 +46,9 @@ export default function GradeEntryForm({
   // 1. Load classes from students
   useEffect(() => {
     if (students && students.length > 0) {
-      const uniqueClasses = Array.from(new Set(students.map(s => s.kelas))).sort();
+      const uniqueClasses = Array.from(new Set(students.map(s => s.kelas))).sort((a, b) => 
+        a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })
+      );
       setClassesList(uniqueClasses);
     }
   }, [students]);
@@ -60,15 +64,20 @@ export default function GradeEntryForm({
     }
   }, [selectedClass, students]);
 
+  const currentStudentObj = students.find(s => s.nis === selectedNis);
+
   // 3. Filter student's existing grades when selected NIP/NIS changes
   useEffect(() => {
     if (filteredStudents && selectedNis) {
-      const history = grades.filter(g => g.nis === selectedNis);
+      const activeTa = currentStudentObj?.tahunajaran || tahunAjaran;
+      const history = grades.filter(g => 
+        g.nis === selectedNis && (!g.tahunajaran || !activeTa || g.tahunajaran === activeTa)
+      );
       setStudentGradesHistory(history);
     } else {
       setStudentGradesHistory([]);
     }
-  }, [selectedNis, grades, filteredStudents]);
+  }, [selectedNis, grades, filteredStudents, tahunAjaran, currentStudentObj]);
 
   // 4. Calculate auto properties
   const handleScoreChange = (val: string) => {
@@ -83,7 +92,6 @@ export default function GradeEntryForm({
     }
   };
 
-  const currentStudentObj = students.find(s => s.nis === selectedNis);
   const subjectNameMap = React.useMemo(() => {
     const map: Record<number, string> = {};
     subjects.forEach(s => { map[s.replid] = s.nama; });
@@ -116,7 +124,8 @@ export default function GradeEntryForm({
           nilaiakhir: numericScore,
           nilaihuruf: nilaiHuruf,
           predikat: predikat,
-          catatanguru: catatan
+          catatanguru: catatan,
+          tahunajaran: currentStudentObj?.tahunajaran || tahunAjaran || '2025/2026'
         };
 
         // Invoke callback to persist locally & mock database sync

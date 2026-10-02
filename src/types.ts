@@ -33,6 +33,7 @@ export interface Grade {
   nilaihuruf: string;
   predikat: string;
   catatanguru: string;
+  tahunajaran?: string;
   createdAt?: string;
 }
 

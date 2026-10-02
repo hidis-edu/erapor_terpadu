@@ -89,14 +89,28 @@ module.exports = function (fastify, opts, next) {
           console.warn('Gagal memuat tahun ajaran dari jbsakad.tahunajaran:', err.message);
       }
 
-      // 2. Ambil data Rapor Terpadu untuk mata pelajaran
-      const [raporResult] = await fastify.mysql.kurikulum.query(
-          `SELECT t.*, p.nama AS mapel 
-           FROM terpadu t 
-           JOIN jbsakad.pelajaran p ON t.idpelajaran = p.replid 
-           WHERE t.nis = ?`, 
-          [nis]
-      );
+      // 2. Ambil data Rapor Terpadu untuk mata pelajaran (difilter per tahun ajaran siswa)
+      let raporResult = [];
+      try {
+        const [res] = await fastify.mysql.kurikulum.query(
+            `SELECT t.*, p.nama AS mapel 
+             FROM terpadu t 
+             JOIN jbsakad.pelajaran p ON t.idpelajaran = p.replid 
+             WHERE t.nis = ? AND (t.tahunajaran = ? OR t.tahunajaran IS NULL OR t.tahunajaran = '')`, 
+            [nis, siswa.tahunajaran]
+        );
+        raporResult = res;
+      } catch (errTa) {
+        // Fallback jika tabel terpadu belum memiliki kolom tahunajaran
+        const [resFallback] = await fastify.mysql.kurikulum.query(
+            `SELECT t.*, p.nama AS mapel 
+             FROM terpadu t 
+             JOIN jbsakad.pelajaran p ON t.idpelajaran = p.replid 
+             WHERE t.nis = ?`, 
+            [nis]
+        );
+        raporResult = resFallback;
+      }
 
       // 3. Ambil data Kepribadian (Ibadah, Akhlak, Disiplin, Catatan Wali Kelas) secara aman
       let kepribadian = { ibadah: 'B', akhlak: 'B', disiplin: 'B', catatan: 'Tingkatkan terus semangat belajar dan kedisiplinanmu.' };

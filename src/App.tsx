@@ -177,13 +177,13 @@ export default function App() {
     loadStudentsApi();
   }, [tahunAjaran]);
 
-  // 2b. Load other stable API resources asynchronously
+  // 2b. Load school-year-dependent resources (Grades, Attendances) dynamically
   useEffect(() => {
     async function loadGradesApi() {
       setIsLoadingGrades(true);
       try {
         const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'https://fastify.nganjuk.net';
-        const response = await fetch(`${apiBaseUrl}/api/rapor/terpadu`);
+        const response = await fetch(`${apiBaseUrl}/api/rapor/terpadu?tahunajaran=${encodeURIComponent(tahunAjaran)}`);
         if (response.ok) {
           const result = await response.json();
           if (result && result.status === 'sukses' && Array.isArray(result.data)) {
@@ -196,22 +196,82 @@ export default function App() {
               nilaiakhir: Number(item.nilaiakhir),
               nilaihuruf: String(item.nilaihuruf),
               predikat: String(item.predikat),
-              catatanguru: String(item.catatanguru || '')
+              catatanguru: String(item.catatanguru || ''),
+              tahunajaran: String(item.tahunajaran || tahunAjaran)
             }));
 
-            // Overwrite state and local storage with the real-time server dataset
             setGrades(apiGrades);
-            localStorage.setItem('grades', JSON.stringify(apiGrades));
+            localStorage.setItem(`grades_${tahunAjaran}`, JSON.stringify(apiGrades));
             setIsLoadingGrades(false);
             return;
           }
         }
       } catch (e) {
-        console.warn('API down/cors issue for Grades. Using local fallbacks.', e);
+        console.warn('API down/cors issue for Grades. Using cached/local data.', e);
+      }
+      
+      const cached = localStorage.getItem(`grades_${tahunAjaran}`);
+      if (cached) {
+        try {
+          setGrades(JSON.parse(cached));
+        } catch (_) {
+          setGrades([]);
+        }
+      } else {
+        setGrades([]);
       }
       setIsLoadingGrades(false);
     }
 
+    async function loadAttendancesApi() {
+      setIsLoadingAttendances(true);
+      try {
+        const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'https://fastify.nganjuk.net';
+        const response = await fetch(`${apiBaseUrl}/api/rapor/kehadiran?tahunajaran=${encodeURIComponent(tahunAjaran)}`);
+        if (response.ok) {
+          const result = await response.json();
+          if (result && result.status === 'sukses' && Array.isArray(result.data)) {
+            const apiAttendances: Attendance[] = result.data.map((item: any) => ({
+              replid: Number(item.replid),
+              nis: String(item.nis),
+              idsemester: Number(item.idsemester || 34),
+              tahunajaran: String(item.tahunajaran || tahunAjaran),
+              sakit: Number(item.sakit || 0),
+              izin: Number(item.izin || 0),
+              alpa: Number(item.alpa || 0),
+              catatan: String(item.catatan || ''),
+              nama_siswa: String(item.nama_siswa || '')
+            }));
+
+            setAttendances(apiAttendances);
+            localStorage.setItem(`attendances_${tahunAjaran}`, JSON.stringify(apiAttendances));
+            setIsLoadingAttendances(false);
+            return;
+          }
+        }
+      } catch (e) {
+        console.warn('API down/cors issue for Attendances. Using cached/local data.', e);
+      }
+      
+      const cached = localStorage.getItem(`attendances_${tahunAjaran}`);
+      if (cached) {
+        try {
+          setAttendances(JSON.parse(cached));
+        } catch (_) {
+          setAttendances([]);
+        }
+      } else {
+        setAttendances([]);
+      }
+      setIsLoadingAttendances(false);
+    }
+
+    loadGradesApi();
+    loadAttendancesApi();
+  }, [tahunAjaran]);
+
+  // 2c. Load general stable resources (Personalities, Classes) once
+  useEffect(() => {
     async function loadPersonalitiesApi() {
       setIsLoadingPersonalities(true);
       try {
@@ -230,7 +290,6 @@ export default function App() {
               createdAt: item.ts || ''
             }));
 
-            // Overwrite state and local storage with the real-time server dataset
             setPersonalities(apiPersonalities);
             localStorage.setItem('personalities', JSON.stringify(apiPersonalities));
             setIsLoadingPersonalities(false);
@@ -241,38 +300,6 @@ export default function App() {
         console.warn('API down/cors issue for Personalities. Using local fallbacks.', e);
       }
       setIsLoadingPersonalities(false);
-    }
-
-    async function loadAttendancesApi() {
-      setIsLoadingAttendances(true);
-      try {
-        const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'https://fastify.nganjuk.net';
-        const response = await fetch(`${apiBaseUrl}/api/rapor/kehadiran`);
-        if (response.ok) {
-          const result = await response.json();
-          if (result && result.status === 'sukses' && Array.isArray(result.data)) {
-            const apiAttendances: Attendance[] = result.data.map((item: any) => ({
-              replid: Number(item.replid),
-              nis: String(item.nis),
-              idsemester: Number(item.idsemester || 34),
-              tahunajaran: String(item.tahunajaran || '2025/2026'),
-              sakit: Number(item.sakit || 0),
-              izin: Number(item.izin || 0),
-              alpa: Number(item.alpa || 0),
-              catatan: String(item.catatan || ''),
-              nama_siswa: String(item.nama_siswa || '')
-            }));
-
-            setAttendances(apiAttendances);
-            localStorage.setItem('attendances', JSON.stringify(apiAttendances));
-            setIsLoadingAttendances(false);
-            return;
-          }
-        }
-      } catch (e) {
-        console.warn('API down/cors issue for Attendances. Using local fallbacks.', e);
-      }
-      setIsLoadingAttendances(false);
     }
 
     async function loadActiveClassesApi() {
@@ -297,9 +324,7 @@ export default function App() {
       }
     }
 
-    loadGradesApi();
     loadPersonalitiesApi();
-    loadAttendancesApi();
     loadActiveClassesApi();
   }, []);
 
@@ -333,20 +358,30 @@ export default function App() {
       }
     }
 
-    // Find if we already have this grade in state
-    const existing = grades.find(g => g.nis === newGrade.nis && g.idpelajaran === newGrade.idpelajaran);
+    // Find if we already have this grade in state for the current academic year
+    const targetTa = newGrade.tahunajaran || tahunAjaran;
+    const existing = grades.find(g => 
+      g.nis === newGrade.nis && 
+      g.idpelajaran === newGrade.idpelajaran &&
+      (!g.tahunajaran || g.tahunajaran === targetTa)
+    );
     const existingReplid = existing?.replid || newGrade.replid;
 
     // Update local state temporarily
     setGrades((prev) => {
-      const idx = prev.findIndex(g => g.nis === newGrade.nis && g.idpelajaran === newGrade.idpelajaran);
+      const idx = prev.findIndex(g => 
+        g.nis === newGrade.nis && 
+        g.idpelajaran === newGrade.idpelajaran &&
+        (!g.tahunajaran || g.tahunajaran === targetTa)
+      );
       let updated = [...prev];
+      const gradeWithTa = { ...newGrade, tahunajaran: targetTa, replid: existingReplid };
       if (idx !== -1) {
-        updated[idx] = { ...newGrade, replid: existingReplid };
+        updated[idx] = gradeWithTa;
       } else {
-        updated.push(newGrade);
+        updated.push(gradeWithTa);
       }
-      localStorage.setItem('grades', JSON.stringify(updated));
+      localStorage.setItem(`grades_${tahunAjaran}`, JSON.stringify(updated));
       return updated;
     });
 
@@ -363,7 +398,8 @@ export default function App() {
             nilaiakhir: newGrade.nilaiakhir,
             nilaihuruf: newGrade.nilaihuruf,
             predikat: newGrade.predikat,
-            catatanguru: newGrade.catatanguru
+            catatanguru: newGrade.catatanguru,
+            tahunajaran: targetTa
           })
         });
       } else {
@@ -379,14 +415,15 @@ export default function App() {
             nilaiakhir: newGrade.nilaiakhir,
             nilaihuruf: newGrade.nilaihuruf,
             predikat: newGrade.predikat,
-            catatanguru: newGrade.catatanguru
+            catatanguru: newGrade.catatanguru,
+            tahunajaran: targetTa
           })
         });
       }
 
       // Re-trigger loadGradesApi to fetch real-time replids assigned by the database!
       if (response && response.ok) {
-        const refreshResponse = await fetch(`${apiBaseUrl}/api/rapor/terpadu`);
+        const refreshResponse = await fetch(`${apiBaseUrl}/api/rapor/terpadu?tahunajaran=${encodeURIComponent(tahunAjaran)}`);
         if (refreshResponse.ok) {
           const result = await refreshResponse.json();
           if (result && result.status === 'sukses' && Array.isArray(result.data)) {
@@ -399,10 +436,11 @@ export default function App() {
               nilaiakhir: Number(item.nilaiakhir),
               nilaihuruf: String(item.nilaihuruf),
               predikat: String(item.predikat),
-              catatanguru: String(item.catatanguru || '')
+              catatanguru: String(item.catatanguru || ''),
+              tahunajaran: String(item.tahunajaran || tahunAjaran)
             }));
             setGrades(apiGrades);
-            localStorage.setItem('grades', JSON.stringify(apiGrades));
+            localStorage.setItem(`grades_${tahunAjaran}`, JSON.stringify(apiGrades));
           }
         }
       }
@@ -412,12 +450,18 @@ export default function App() {
   };
 
   const handleDeleteGrade = async (nis: string, idpelajaran: number) => {
-    const target = grades.find(g => g.nis === nis && g.idpelajaran === idpelajaran);
+    const target = grades.find(g => 
+      g.nis === nis && 
+      g.idpelajaran === idpelajaran &&
+      (!g.tahunajaran || g.tahunajaran === tahunAjaran)
+    );
     const targetReplid = target?.replid;
 
     setGrades((prev) => {
-      const filtered = prev.filter(g => !(g.nis === nis && g.idpelajaran === idpelajaran));
-      localStorage.setItem('grades', JSON.stringify(filtered));
+      const filtered = prev.filter(g => 
+        !(g.nis === nis && g.idpelajaran === idpelajaran && (!g.tahunajaran || g.tahunajaran === tahunAjaran))
+      );
+      localStorage.setItem(`grades_${tahunAjaran}`, JSON.stringify(filtered));
       return filtered;
     });
 
@@ -429,13 +473,13 @@ export default function App() {
           method: 'DELETE'
         });
       } else {
-        response = await fetch(`${apiBaseUrl}/api/rapor/terpadu?nis=${nis}&idpelajaran=${idpelajaran}`, {
+        response = await fetch(`${apiBaseUrl}/api/rapor/terpadu?nis=${nis}&idpelajaran=${idpelajaran}&tahunajaran=${encodeURIComponent(tahunAjaran)}`, {
           method: 'DELETE'
         });
       }
 
       if (response && response.ok) {
-        const refreshResponse = await fetch(`${apiBaseUrl}/api/rapor/terpadu`);
+        const refreshResponse = await fetch(`${apiBaseUrl}/api/rapor/terpadu?tahunajaran=${encodeURIComponent(tahunAjaran)}`);
         if (refreshResponse.ok) {
           const result = await refreshResponse.json();
           if (result && result.status === 'sukses' && Array.isArray(result.data)) {
@@ -448,10 +492,11 @@ export default function App() {
               nilaiakhir: Number(item.nilaiakhir),
               nilaihuruf: String(item.nilaihuruf),
               predikat: String(item.predikat),
-              catatanguru: String(item.catatanguru || '')
+              catatanguru: String(item.catatanguru || ''),
+              tahunajaran: String(item.tahunajaran || tahunAjaran)
             }));
             setGrades(apiGrades);
-            localStorage.setItem('grades', JSON.stringify(apiGrades));
+            localStorage.setItem(`grades_${tahunAjaran}`, JSON.stringify(apiGrades));
           }
         }
       }
@@ -847,6 +892,7 @@ export default function App() {
                 subjects={subjects}
                 currentTeacher={currentTeacher}
                 grades={grades}
+                tahunAjaran={tahunAjaran}
                 onSaveGrade={handleSaveGrade}
                 onDeleteGrade={handleDeleteGrade}
                 addToast={addToast}
@@ -877,6 +923,7 @@ export default function App() {
               <RekapRaporCenter
                 students={resolvedStudents}
                 activeClasses={activeClasses}
+                activeTahunAjaran={tahunAjaran}
                 addToast={addToast}
               />
             )}
@@ -889,6 +936,7 @@ export default function App() {
                 subjects={subjects}
                 attendances={attendances}
                 activeClasses={activeClasses}
+                tahunAjaran={tahunAjaran}
                 addToast={addToast}
               />
             )}

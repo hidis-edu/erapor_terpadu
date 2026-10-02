@@ -14,6 +14,7 @@ interface ReportsCenterProps {
   subjects: Subject[];
   attendances: Attendance[];
   activeClasses: any[];
+  tahunAjaran?: string;
   addToast: (message: string, type: 'success' | 'error') => void;
 }
 
@@ -24,6 +25,7 @@ export default function ReportsCenter({
   subjects,
   attendances,
   activeClasses,
+  tahunAjaran,
   addToast
 }: ReportsCenterProps) {
   const [searchTerm, setSearchTerm] = useState('');
@@ -108,10 +110,11 @@ export default function ReportsCenter({
       
       const matchesClass = selectedClass === '' || studentClass === selectedClass;
       const matchesSubject = selectedSubjectId === '' || item.idpelajaran === parseInt(selectedSubjectId);
+      const matchesYear = tahunAjaran ? (!item.tahunajaran || item.tahunajaran === tahunAjaran) : true;
 
-      return matchesSearch && matchesClass && matchesSubject;
+      return matchesSearch && matchesClass && matchesSubject && matchesYear;
     });
-  }, [grades, searchTerm, selectedClass, selectedSubjectId, studentMap, subjectMap]);
+  }, [grades, searchTerm, selectedClass, selectedSubjectId, studentMap, subjectMap, tahunAjaran]);
 
   // Handle excel export
   const onExportExcel = () => {
@@ -154,8 +157,8 @@ export default function ReportsCenter({
 
   // Student specific printing preparation
   const printableList = useMemo(() => {
-    return students.filter(s => grades.some(g => g.nis === s.nis));
-  }, [students, grades]);
+    return students.filter(s => grades.some(g => g.nis === s.nis && (!g.tahunajaran || !tahunAjaran || g.tahunajaran === tahunAjaran)));
+  }, [students, grades, tahunAjaran]);
 
   const printClassesList = useMemo(() => {
     return Array.from(new Set(printableList.map(s => s.kelas))).sort();
@@ -167,8 +170,8 @@ export default function ReportsCenter({
   }, [printableList, printSelectedClass]);
 
   const activePrintGrades = useMemo(() => {
-    return grades.filter(g => g.nis === printNis);
-  }, [printNis, grades]);
+    return grades.filter(g => g.nis === printNis && (!g.tahunajaran || !tahunAjaran || g.tahunajaran === tahunAjaran));
+  }, [printNis, grades, tahunAjaran]);
 
   const activePrintPersonality = useMemo(() => {
     return personalities.find(p => p.nis === printNis);

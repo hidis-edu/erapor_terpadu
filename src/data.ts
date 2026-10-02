@@ -16,6 +16,7 @@ export const DEFAULT_SUBJECTS: Subject[] = [
 ];
 
 export const FALLBACK_STUDENTS: Student[] = [
+  // Kelas 1
   { nis: '10291', nama: 'Achmad Dani Yusuf', kelas: '1A', tahunajaran: '2025/2026', hportu: '6285749455111' },
   { nis: '10292', nama: 'Aisyah Putri Azzahra', kelas: '1A', tahunajaran: '2025/2026', hportu: '6285749455112' },
   { nis: '10293', nama: 'Bagus Setyo Prabowo', kelas: '1A', tahunajaran: '2025/2026', hportu: '6285749455113' },
@@ -24,13 +25,37 @@ export const FALLBACK_STUDENTS: Student[] = [
   { nis: '10296', nama: 'Fatimah Az-Zahra', kelas: '1B', tahunajaran: '2025/2026', hportu: '6285749455116' },
   { nis: '10297', nama: 'Gading Mahendra', kelas: '1B', tahunajaran: '2025/2026', hportu: '6285749455117' },
   { nis: '10298', nama: 'Hafizuddin Al-Ayub', kelas: '1B', tahunajaran: '2025/2026', hportu: '6285749455118' },
+  
+  // Kelas 2
   { nis: '10299', nama: 'Indah Lestari', kelas: '2A', tahunajaran: '2025/2026', hportu: '6285749455119' },
   { nis: '10300', nama: 'Joko Susilo', kelas: '2A', tahunajaran: '2025/2026', hportu: '6285749455120' },
   { nis: '10301', nama: 'Kanza Khairunnisa', kelas: '2A', tahunajaran: '2025/2026', hportu: '6285749455121' },
   { nis: '10302', nama: 'Luqman Hakim', kelas: '2B', tahunajaran: '2025/2026', hportu: '6285749455122' },
   { nis: '10303', nama: 'Maulana Malik', kelas: '2B', tahunajaran: '2025/2026', hportu: '6285749455123' },
+  
+  // Kelas 3
   { nis: '10304', nama: 'Nabila Syakieb', kelas: '3A', tahunajaran: '2025/2026', hportu: '6285749455124' },
-  { nis: '10305', nama: 'Oky Syahputra', kelas: '3A', tahunajaran: '2025/2026', hportu: '6285749455125' }
+  { nis: '10305', nama: 'Oky Syahputra', kelas: '3A', tahunajaran: '2025/2026', hportu: '6285749455125' },
+  { nis: '10306', nama: 'Putri Ramadhani', kelas: '3B', tahunajaran: '2025/2026', hportu: '6285749455126' },
+  { nis: '10307', nama: 'Qori Amalia', kelas: '3B', tahunajaran: '2025/2026', hportu: '6285749455127' },
+
+  // Kelas 4
+  { nis: '10308', nama: 'Rafi Ahmad Fauzi', kelas: '4A', tahunajaran: '2025/2026', hportu: '6285749455128' },
+  { nis: '10309', nama: 'Siti Nurhaliza', kelas: '4A', tahunajaran: '2025/2026', hportu: '6285749455129' },
+  { nis: '10310', nama: 'Taufik Hidayatullah', kelas: '4B', tahunajaran: '2025/2026', hportu: '6285749455130' },
+  { nis: '10311', nama: 'Umar Wirahadi', kelas: '4B', tahunajaran: '2025/2026', hportu: '6285749455131' },
+
+  // Kelas 5
+  { nis: '10312', nama: 'Vina Panduwinata', kelas: '5A', tahunajaran: '2025/2026', hportu: '6285749455132' },
+  { nis: '10313', nama: 'Wahyu Hidayat', kelas: '5A', tahunajaran: '2025/2026', hportu: '6285749455133' },
+  { nis: '10314', nama: 'Wildan Mubarok', kelas: '5B', tahunajaran: '2025/2026', hportu: '6285749455134' },
+  { nis: '10315', nama: 'Yasmin Zahira', kelas: '5B', tahunajaran: '2025/2026', hportu: '6285749455135' },
+
+  // Kelas 6
+  { nis: '10316', nama: 'Zainal Abidin', kelas: '6A', tahunajaran: '2025/2026', hportu: '6285749455136' },
+  { nis: '10317', nama: 'Zaskia Adya Mecca', kelas: '6A', tahunajaran: '2025/2026', hportu: '6285749455137' },
+  { nis: '10318', nama: 'Zulfikar Ali', kelas: '6B', tahunajaran: '2025/2026', hportu: '6285749455138' },
+  { nis: '10319', nama: 'Zahra Kirana', kelas: '6B', tahunajaran: '2025/2026', hportu: '6285749455139' }
 ];
 
 export const INITIAL_GRADES: Grade[] = [];

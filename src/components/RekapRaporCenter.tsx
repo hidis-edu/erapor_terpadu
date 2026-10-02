@@ -11,12 +11,14 @@ import { sendWhatsappMessage } from '../utils/whatsapp';
 interface RekapRaporCenterProps {
   students: Student[];
   activeClasses?: any[];
+  activeTahunAjaran?: string;
   addToast: (message: string, type: 'success' | 'error') => void;
 }
 
 export default function RekapRaporCenter({
   students,
   activeClasses,
+  activeTahunAjaran,
   addToast
 }: RekapRaporCenterProps) {
   const [selectedClass, setSelectedClass] = useState('');
@@ -93,16 +95,20 @@ export default function RekapRaporCenter({
   };
 
   // 1. Fetch all Rekap Rapor from backend on mounting & on demand
-  const fetchAllRekaps = async (silent = false) => {
+  const fetchAllRekaps = async (silent = false, customTa?: string) => {
     if (!silent) setIsLoadingRekaps(true);
+    const targetTa = customTa !== undefined ? customTa : activeTahunAjaran;
     try {
       const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'https://fastify.nganjuk.net';
-      const response = await fetch(`${apiBaseUrl}/api/rapor/rekap`);
+      const url = targetTa
+        ? `${apiBaseUrl}/api/rapor/rekap?tahunajaran=${encodeURIComponent(targetTa)}`
+        : `${apiBaseUrl}/api/rapor/rekap`;
+      const response = await fetch(url);
       if (response.ok) {
         const result = await response.json();
         if (result && result.status === 'sukses' && Array.isArray(result.data)) {
           setRekapsList(result.data);
-          localStorage.setItem('rekap_rapor_list', JSON.stringify(result.data));
+          localStorage.setItem(`rekap_rapor_list_${targetTa || 'all'}`, JSON.stringify(result.data));
         } else {
           setRekapsList([]);
         }
@@ -112,13 +118,15 @@ export default function RekapRaporCenter({
       }
     } catch (e) {
       console.warn('API error loading Rekaps, reading fallback cache', e);
-      const cached = localStorage.getItem('rekap_rapor_list');
+      const cached = localStorage.getItem(`rekap_rapor_list_${targetTa || 'all'}`);
       if (cached) {
         try {
           setRekapsList(JSON.parse(cached));
         } catch (_) {
           setRekapsList([]);
         }
+      } else {
+        setRekapsList([]);
       }
     } finally {
       if (!silent) setIsLoadingRekaps(false);
@@ -126,21 +134,57 @@ export default function RekapRaporCenter({
   };
 
   useEffect(() => {
-    fetchAllRekaps();
-  }, []);
+    fetchAllRekaps(false, activeTahunAjaran);
+  }, [activeTahunAjaran]);
 
-  // 2. Extract unique classes for student generation dropdown
+  // 2. Extract comprehensive classes for student generation dropdown & filter (all 6 grades)
   useEffect(() => {
-    if (students && students.length > 0) {
-      const uniqueClasses = Array.from(new Set(students.map(s => s.kelas))).sort();
-      setClassesList(uniqueClasses);
+    const classSet = new Set<string>();
+
+    // From activeClasses (from JBS database)
+    if (activeClasses && activeClasses.length > 0) {
+      activeClasses.forEach((c: any) => {
+        const clsName = c?.kelas || c?.nama;
+        if (clsName && typeof clsName === 'string') {
+          classSet.add(clsName.trim());
+        }
+      });
     }
-  }, [students]);
+
+    // From students
+    if (students && students.length > 0) {
+      students.forEach(s => {
+        if (s.kelas) classSet.add(String(s.kelas).trim());
+      });
+    }
+
+    // From rekapsList
+    if (rekapsList && rekapsList.length > 0) {
+      rekapsList.forEach(item => {
+        const directKls = (item as any).kelas;
+        if (directKls) classSet.add(String(directKls).trim());
+      });
+    }
+
+    // Always guarantee all 6 elementary school levels (1A to 6B)
+    const defaultSdClasses = ['1A', '1B', '2A', '2B', '3A', '3B', '4A', '4B', '5A', '5B', '6A', '6B'];
+    defaultSdClasses.forEach(cls => classSet.add(cls));
+
+    // Sort naturally: 1A, 1B, 2A, 2B, 3A, 3B, 4A, 4B, 5A, 5B, 6A, 6B
+    const sorted = Array.from(classSet).sort((a, b) => 
+      a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })
+    );
+    setClassesList(sorted);
+  }, [students, activeClasses, rekapsList]);
 
   // 3. Filter students dropdown when selected class changed
   useEffect(() => {
     if (selectedClass) {
-      const filtered = students.filter(s => s.kelas === selectedClass);
+      const cleanSelected = selectedClass.trim().toLowerCase().replace(/^kelas\s*/i, '');
+      const filtered = students.filter(s => {
+        const studentClass = (s.kelas || '').trim().toLowerCase().replace(/^kelas\s*/i, '');
+        return studentClass === cleanSelected || s.kelas === selectedClass;
+      });
       setFilteredStudents(filtered);
       setSelectedNis('');
       setTahunAjaran('');
@@ -175,7 +219,8 @@ export default function RekapRaporCenter({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           nis: selectedNis,
-          idsemester: idSemester
+          idsemester: idSemester,
+          tahunajaran: tahunAjaran || activeTahunAjaran || '2025/2026'
         })
       });
 
@@ -227,34 +272,60 @@ export default function RekapRaporCenter({
   // Helper mapping names in case LEFT API JOIN is loading
   const getOfflineStudentName = (item: RekapRapor) => {
     if (item.nama_siswa) return item.nama_siswa;
-    const s = students.find(stud => stud.nis === item.nis);
-    return s ? s.nama : 'Tidak diketahui';
+    const itemNis = String(item.nis || '').trim();
+    const s = students.find(stud => String(stud.nis).trim() === itemNis);
+    return s ? s.nama : `Siswa (${item.nis})`;
   };
 
   const getOfflineStudentClass = (item: RekapRapor) => {
-    const s = students.find(stud => stud.nis === item.nis);
-    if (s && s.kelas) return s.kelas;
-    
-    // Fallback: If s is not found, try to resolve ID via activeClasses
-    const classId = item.idkelas;
-    if (classId && !isNaN(Number(classId))) {
-      const found = (activeClasses || []).find((c: any) => c && String(c.replid) === String(classId));
-      if (found && found.kelas) return String(found.kelas);
+    // 1. Direct from SQL JOIN if backend sends 'kelas' (from jbsakad.kelas.kelas)
+    if ((item as any).kelas) {
+      return String((item as any).kelas).trim();
     }
-    return item.idkelas || '-';
+
+    const itemNis = String(item.nis || '').trim();
+
+    // 2. From students array
+    const s = students.find(stud => String(stud.nis).trim() === itemNis);
+    if (s && s.kelas) {
+      return String(s.kelas).trim();
+    }
+    
+    // 3. Resolve via idkelas in activeClasses
+    const classId = item.idkelas || (s as any)?.idkelas;
+    if (classId) {
+      const found = (activeClasses || []).find((c: any) => 
+        c && (String(c.replid) === String(classId) || String(c.id) === String(classId))
+      );
+      if (found && found.kelas) return String(found.kelas).trim();
+      if (found && found.nama) return String(found.nama).trim();
+    }
+
+    return item.idkelas ? String(item.idkelas).trim() : '-';
   };
 
   // Filter rekap logs representation table
   const filteredRekaps = rekapsList.filter(item => {
     const studentName = (getOfflineStudentName(item) || '').toLowerCase();
-    const nis = (item.nis || '').toLowerCase();
-    const query = searchQuery.toLowerCase();
-    const matchSearch = studentName.includes(query) || nis.includes(query);
+    const nis = String(item.nis || '').trim().toLowerCase();
+    const query = searchQuery.trim().toLowerCase();
+    const matchSearch = !query || studentName.includes(query) || nis.includes(query);
 
     const sClass = getOfflineStudentClass(item);
-    const matchClass = filterClass ? sClass === filterClass : true;
+    const cleanSClass = (sClass || '').trim().toLowerCase().replace(/^kelas\s*/i, '');
+    const cleanFilter = (filterClass || '').trim().toLowerCase().replace(/^kelas\s*/i, '');
 
-    return matchSearch && matchClass;
+    const matchClass = !filterClass || 
+      cleanSClass === cleanFilter || 
+      sClass === filterClass ||
+      cleanSClass.startsWith(cleanFilter);
+
+    // Filter strictly by active school year to prevent cross-year grade display
+    const itemTa = (item.tahunajaran || '').trim().replace('-', '/');
+    const activeTa = (activeTahunAjaran || '').trim().replace('-', '/');
+    const matchYear = !activeTa || !itemTa || itemTa === activeTa;
+
+    return matchSearch && matchClass && matchYear;
   });
 
   const getScoreColor = (score: string) => {
@@ -391,8 +462,13 @@ export default function RekapRaporCenter({
         {/* Module Header Controls */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-4 mb-4 gap-3.5">
           <div>
-            <h3 className="font-black text-slate-800 text-base flex items-center gap-1.5">
+            <h3 className="font-black text-slate-800 text-base flex items-center gap-2 flex-wrap">
               <span>🏅 Arsip Hasil Rekapan Rapor</span>
+              {activeTahunAjaran && (
+                <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200">
+                  ({activeTahunAjaran})
+                </span>
+              )}
             </h3>
             <p className="text-[11px] text-slate-400">Database rekaprapor hasil kalkulasi aggregate akhir</p>
           </div>
@@ -427,13 +503,13 @@ export default function RekapRaporCenter({
               className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-2.5 text-xs text-slate-800 placeholder:text-slate-400 font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
             />
           </div>
-          <div className="w-full md:w-44">
+          <div className="w-full md:w-52">
             <select
               value={filterClass}
               onChange={(e) => setFilterClass(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2.5 px-3 text-xs text-slate-850 font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2.5 px-3 text-xs text-slate-850 font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
             >
-              <option value="">Semua Kelas</option>
+              <option value="">Semua Tingkat / Kelas</option>
               {classesList.map(c => (
                 <option key={c} value={c}>Kelas {c}</option>
               ))}
