@@ -1,388 +1,465 @@
-// fastify-print-route.js
-// Template endpoint Fastify untuk cetak PDF E-Rapor Terpadu
-// Format HTML & CSS disesuaikan persis seperti tampilan cetak (print-only) di aplikasi React.
+// =============================================================================
+// FILE: fastify-print-route.js
+// ROUTE CETAK E-RAPOR DINAMIS & FLEKSIBEL (PTS / PAS / TERPADU)
+// Bebas Hardcode: Otomatis Menyesuaikan Mode PTS vs PAS, Tahun Ajaran, Semester,
+// Identitas Sekolah, Kepala Sekolah, Wali Kelas, dan Tanggal Cetak Indonesia.
+// =============================================================================
 
 module.exports = function (fastify, opts, next) {
-  fastify.get('/print/terpadu/:nis', async (request, reply) => {
-    const { nis } = request.params;
 
-    // Tambahkan mode debug instan untuk mendiagnosis kolom DB JBS yang sebenarnya
+  // Helper: Format tanggal Indonesia dinamis (contoh: "26 Oktober 2026")
+  function formatTanggalIndonesia(d = new Date()) {
+    const bulanIndo = [
+      'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+      'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+    ];
+    return `${d.getDate()} ${bulanIndo[d.getMonth()]} ${d.getFullYear()}`;
+  }
+
+  // Helper: Konversi Nilai Angka ke Terbilang Kata Bahasa Indonesia
+  function numberToWords(num) {
+    const val = Math.round(Number(num));
+    if (isNaN(val) || val < 0 || val > 100) return '-';
+    if (val === 0) return 'nol';
+    if (val === 100) return 'seratus';
+    
+    const belasan = ['sepuluh', 'sebelas', 'dua belas', 'tiga belas', 'empat belas', 'lima belas', 'enam belas', 'tujuh belas', 'delapan belas', 'sembilan belas'];
+    const puluhan = ['', '', 'dua puluh', 'tiga puluh', 'empat puluh', 'lima puluh', 'enam puluh', 'tujuh puluh', 'delapan puluh', 'sembilan puluh'];
+    const satuan = ['', 'satu', 'dua', 'tiga', 'empat', 'lima', 'enam', 'tujuh', 'delapan', 'sembilan'];
+    
+    if (val < 10) return satuan[val];
+    if (val < 20) return belasan[val - 10];
+    
+    const puluhDigit = Math.floor(val / 10);
+    const sisaDigit = val % 10;
+    return (puluhan[puluhDigit] + ' ' + satuan[sisaDigit]).trim();
+  }
+
+  // Handler Utama Pencetakan Rapor
+  const printHandler = async (request, reply) => {
+    const { nis } = request.params;
+    
+    // -------------------------------------------------------------------------
+    // 1. Tentukan Mode Rapor Dinamis: PTS (Tengah Semester) vs PAS (Akhir Semester)
+    // -------------------------------------------------------------------------
+    const routePath = request.raw.url || '';
+    const queryJenis = request.query.jenis || request.query.tipe || request.params.jenis;
+    
+    let isPTS = false;
+    if (queryJenis) {
+      isPTS = String(queryJenis).trim().toUpperCase() === 'PTS';
+    } else if (routePath.includes('/print/pts/')) {
+      isPTS = true;
+    }
+
+    const modeLabel = isPTS ? 'PTS' : 'PAS';
+
+    // Mode Diagnostik Cepat untuk Guru/Teknisi
     if (request.query.debug) {
       try {
-        const [siswaRow] = await fastify.mysql.akad.query(
-          `SELECT * FROM jbsakad.siswa WHERE nis = ? LIMIT 1`,
-          [nis]
-        );
-        let idkelas = null;
-        if (siswaRow && siswaRow.length > 0) {
-          idkelas = siswaRow[0].idkelas;
-        }
-
-        const [kelasCols] = await fastify.mysql.akad.query(`SHOW COLUMNS FROM jbsakad.kelas`);
-        
-        let kelasData = null;
-        if (idkelas) {
-          const [kelasRow] = await fastify.mysql.akad.query(
-            `SELECT * FROM jbsakad.kelas WHERE replid = ? LIMIT 1`,
-            [idkelas]
-          );
-          kelasData = kelasRow;
-        } else {
-          const [kelasRow] = await fastify.mysql.akad.query(
-            `SELECT * FROM jbsakad.kelas LIMIT 3`
-          );
-          kelasData = kelasRow;
-        }
-
+        const [siswaRow] = await fastify.mysql.akad.query(`SELECT * FROM jbsakad.siswa WHERE nis = ? LIMIT 1`, [nis]);
         return reply.send({
           status: 'debug_info',
           nis,
-          siswaRow,
-          idkelas,
-          jbsakad_kelas_columns: kelasCols,
-          kelas_data_row: kelasData
+          mode: modeLabel,
+          siswaRow
         });
       } catch (err) {
-        return reply.send({
-          status: 'debug_error',
-          pesan: err.message,
-          stack: err.stack
-        });
+        return reply.send({ status: 'debug_error', pesan: err.message });
       }
     }
 
     try {
-      // 1. Ambil data Siswa dengan relasi Kelas untuk mendapatkan kode kelas
-      let siswa = { nama: '', nis: '', nisn: '', kelas: '-', tahunajaran: '2025/2026' };
+      // -----------------------------------------------------------------------
+      // 2. Ambil Data Profil Siswa & Kelas
+      // -----------------------------------------------------------------------
+      let siswa = { 
+        nama: '', 
+        nis: '', 
+        nisn: '', 
+        kelas: '-', 
+        tahunajaran: request.query.tahunajaran || '2025/2026',
+        idsemester: request.query.idsemester ? Number(request.query.idsemester) : 34
+      };
       
       const [siswaResult] = await fastify.mysql.akad.query(
-          `SELECT s.nama, s.nis, s.nisn, k.kelas 
-           FROM jbsakad.siswa s 
-           LEFT JOIN jbsakad.kelas k ON s.idkelas = k.replid 
-           WHERE s.nis = ?`, 
-          [nis]
+        `SELECT s.nama, s.nis, s.nisn, s.idkelas, k.kelas 
+         FROM jbsakad.siswa s 
+         LEFT JOIN jbsakad.kelas k ON s.idkelas = k.replid 
+         WHERE s.nis = ? LIMIT 1`, 
+        [nis]
       );
 
       if (!siswaResult || siswaResult.length === 0) {
-          return reply.code(404).send({ status: 'error', pesan: 'Data siswa ora ketemu!' });
+        return reply.code(404).send({ status: 'error', pesan: 'Data siswa tidak ditemukan!' });
       }
 
       siswa.nama = siswaResult[0].nama;
-      siswa.nis = siswaResult[0].nis;
-      siswa.nisn = siswaResult[0].nisn;
+      siswa.nis = String(siswaResult[0].nis);
+      siswa.nisn = siswaResult[0].nisn || '-';
       siswa.kelas = siswaResult[0].kelas || '-';
 
-      // Ambil data tahun ajaran secara dinamis dan aman
-      try {
+      // Ambil Tahun Ajaran & ID Semester secara dinamis jika tidak diberikan di query
+      if (!request.query.tahunajaran) {
+        try {
           const [taResult] = await fastify.mysql.akad.query(
-              `SELECT t.tahunajaran 
-               FROM jbsakad.siswa s
-               JOIN jbsakad.kelas k ON s.idkelas = k.replid
-               JOIN jbsakad.tahunajaran t ON k.idtahunajaran = t.replid
-               WHERE s.nis = ? LIMIT 1`,
-              [nis]
+            `SELECT t.tahunajaran, t.replid AS idta, t.departemen
+             FROM jbsakad.siswa s
+             JOIN jbsakad.kelas k ON s.idkelas = k.replid
+             JOIN jbsakad.tahunajaran t ON k.idtahunajaran = t.replid
+             WHERE s.nis = ? LIMIT 1`,
+            [nis]
           );
           if (taResult && taResult.length > 0 && taResult[0].tahunajaran) {
-              siswa.tahunajaran = taResult[0].tahunajaran;
+            siswa.tahunajaran = taResult[0].tahunajaran;
           }
-      } catch (err) {
-          console.warn('Gagal memuat tahun ajaran dari jbsakad.tahunajaran:', err.message);
+        } catch (errTa) {
+          console.warn('Fallback tahun ajaran:', errTa.message);
+        }
       }
 
-      // 2. Ambil data Rapor Terpadu untuk mata pelajaran (difilter per tahun ajaran siswa)
+      // Deteksi Semester (Ganjil vs Genap)
+      let semesterNama = 'Ganjil';
+      let semesterAngka = '1';
+      if (request.query.semester) {
+        semesterAngka = String(request.query.semester).trim();
+        semesterNama = (semesterAngka === '2' || semesterAngka.toLowerCase().includes('genap')) ? 'Genap' : 'Ganjil';
+      } else if (siswa.idsemester === 35 || siswa.idsemester % 2 !== 0) {
+        // Logika umum penomoran semester
+        semesterNama = (siswa.idsemester === 34 || siswa.idsemester === 1) ? 'Ganjil' : 'Genap';
+        semesterAngka = semesterNama === 'Ganjil' ? '1' : '2';
+      }
+
+      const isSemesterGenap = semesterNama.toLowerCase() === 'genap';
+
+      // -----------------------------------------------------------------------
+      // 3. Ambil Identitas Sekolah Secara Dinamis (Bebas Hardcode)
+      // -----------------------------------------------------------------------
+      let sekolah = {
+        nama: "SD ISLAM HIDAYATUL ISLAMIYAH",
+        alamat: "Jl. Sapi Perah Rt 003/02, Pondok Ranggon",
+        kota: "Jakarta Timur",
+        telepon: "Telp: 8440279",
+        npsn: "20104149"
+      };
+
+      try {
+        const [identitasRows] = await fastify.mysql.akad.query(`SELECT * FROM jbsadm.identitas LIMIT 1`);
+        if (identitasRows && identitasRows.length > 0) {
+          const row = identitasRows[0];
+          if (row.nama || row.sekolah) sekolah.nama = String(row.nama || row.sekolah).trim();
+          if (row.alamat) sekolah.alamat = String(row.alamat).trim();
+          if (row.kota || row.kabupaten) sekolah.kota = String(row.kota || row.kabupaten).trim();
+          if (row.telp || row.telepon) sekolah.telepon = String(row.telp || row.telepon).trim();
+          if (row.npsn) sekolah.npsn = String(row.npsn).trim();
+        }
+      } catch (eIdentitas) {
+        // Fallback: periksa tabel departemen
+        try {
+          const [depRows] = await fastify.mysql.akad.query(`SELECT nama, keterangan FROM jbsakad.departemen LIMIT 1`);
+          if (depRows && depRows.length > 0 && depRows[0].nama) {
+            sekolah.nama = depRows[0].nama.trim();
+          }
+        } catch (_) {}
+      }
+
+      if (request.query.sekolah) {
+        sekolah.nama = String(request.query.sekolah).trim();
+      }
+
+      // -----------------------------------------------------------------------
+      // 4. Ambil Data Nilai Sesuai Kebutuhan PTS vs PAS
+      // -----------------------------------------------------------------------
       let raporResult = [];
-      try {
-        const [res] = await fastify.mysql.kurikulum.query(
-            `SELECT t.*, p.nama AS mapel 
-             FROM terpadu t 
-             JOIN jbsakad.pelajaran p ON t.idpelajaran = p.replid 
-             WHERE t.nis = ? AND (t.tahunajaran = ? OR t.tahunajaran IS NULL OR t.tahunajaran = '')`, 
-            [nis, siswa.tahunajaran]
-        );
-        raporResult = res;
-      } catch (errTa) {
-        // Fallback jika tabel terpadu belum memiliki kolom tahunajaran
-        const [resFallback] = await fastify.mysql.kurikulum.query(
-            `SELECT t.*, p.nama AS mapel 
-             FROM terpadu t 
-             JOIN jbsakad.pelajaran p ON t.idpelajaran = p.replid 
-             WHERE t.nis = ?`, 
-            [nis]
-        );
-        raporResult = resFallback;
-      }
 
-      // 3. Ambil data Kepribadian (Ibadah, Akhlak, Disiplin, Catatan Wali Kelas) secara aman
-      let kepribadian = { ibadah: 'B', akhlak: 'B', disiplin: 'B', catatan: 'Tingkatkan terus semangat belajar dan kedisiplinanmu.' };
-      try {
-          const [kepResult] = await fastify.mysql.kurikulum.query(
-              `SELECT ibadah, akhlak, disiplin, catatan 
-               FROM kepribadian 
-               WHERE nis = ? 
-               ORDER BY replid DESC LIMIT 1`,
-              [nis]
+      if (isPTS) {
+        // --- MODE PTS: Tarik dari kurikulum.pts (Komponen PH, PTS, Nilai Akhir) ---
+        try {
+          const [ptsRows] = await fastify.mysql.kurikulum.query(
+            `SELECT p.*, pel.nama AS mapel, pel.kode AS kodemapel
+             FROM kurikulum.pts p
+             JOIN jbsakad.pelajaran pel ON p.idpelajaran = pel.replid
+             WHERE (p.nis = ? OR CAST(p.nis AS CHAR) = ?)
+               AND (p.tahunajaran = ? OR REPLACE(p.tahunajaran, '-', '/') = REPLACE(?, '-', '/') OR p.tahunajaran IS NULL OR p.tahunajaran = "")
+             ORDER BY pel.replid ASC`,
+            [nis, nis, siswa.tahunajaran, siswa.tahunajaran]
           );
-          if (kepResult && kepResult.length > 0) {
-              kepribadian = {
-                  ibadah: kepResult[0].ibadah || 'B',
-                  akhlak: kepResult[0].akhlak || 'B',
-                  disiplin: kepResult[0].disiplin || 'B',
-                  catatan: kepResult[0].catatan || 'Tingkatkan terus semangat belajar dan kedisiplinanmu.'
-              };
+
+          if (ptsRows && ptsRows.length > 0) {
+            raporResult = ptsRows;
+          } else {
+            // Fallback HANYA jika nilai di kurikulum.terpadu berjenis 'PTS'
+            const [fallbackRows] = await fastify.mysql.kurikulum.query(
+              `SELECT t.*, pel.nama AS mapel, pel.kode AS kodemapel 
+               FROM kurikulum.terpadu t 
+               JOIN jbsakad.pelajaran pel ON t.idpelajaran = pel.replid 
+               WHERE (t.nis = ? OR CAST(t.nis AS CHAR) = ?)
+                 AND t.jenis = 'PTS'
+                 AND (t.tahunajaran = ? OR REPLACE(t.tahunajaran, '-', '/') = REPLACE(?, '-', '/') OR t.tahunajaran IS NULL OR t.tahunajaran = "")
+               ORDER BY pel.replid ASC`,
+              [nis, nis, siswa.tahunajaran, siswa.tahunajaran]
+            );
+            raporResult = fallbackRows || [];
           }
-      } catch (err) {
-          console.warn('Gagal memuat data kepribadian:', err.message);
+        } catch (ePts) {
+          console.warn('Gagal memuat kurikulum.pts, mencoba fallback terpadu jenis PTS:', ePts.message);
+          try {
+            const [fallbackRows] = await fastify.mysql.kurikulum.query(
+              `SELECT t.*, pel.nama AS mapel, pel.kode AS kodemapel 
+               FROM kurikulum.terpadu t 
+               JOIN jbsakad.pelajaran pel ON t.idpelajaran = pel.replid 
+               WHERE (t.nis = ? OR CAST(t.nis AS CHAR) = ?)
+                 AND t.jenis = 'PTS'
+                 AND (t.tahunajaran = ? OR REPLACE(t.tahunajaran, '-', '/') = REPLACE(?, '-', '/') OR t.tahunajaran IS NULL OR t.tahunajaran = "")
+               ORDER BY pel.replid ASC`,
+              [nis, nis, siswa.tahunajaran, siswa.tahunajaran]
+            );
+            raporResult = fallbackRows || [];
+          } catch (_) {
+            raporResult = [];
+          }
+        }
+      } else {
+        // --- MODE PAS: Tarik dari kurikulum.terpadu (Nilai Akhir Terpadu Semester) ---
+        const [terpaduRows] = await fastify.mysql.kurikulum.query(
+          `SELECT t.*, p.nama AS mapel, p.kode AS kodemapel 
+           FROM kurikulum.terpadu t 
+           JOIN jbsakad.pelajaran p ON t.idpelajaran = p.replid 
+           WHERE (t.nis = ? OR CAST(t.nis AS CHAR) = ?)
+             AND (t.jenis = 'PAS' OR t.jenis IS NULL OR t.jenis = '')
+             AND (t.tahunajaran = ? OR REPLACE(t.tahunajaran, '-', '/') = REPLACE(?, '-', '/') OR t.tahunajaran IS NULL OR t.tahunajaran = "")
+           ORDER BY p.replid ASC`, 
+          [nis, nis, siswa.tahunajaran, siswa.tahunajaran]
+        );
+        raporResult = terpaduRows || [];
       }
 
-      // 4. Ambil data Kehadiran / Absensi (Sakit, Izin, Alpa) secara aman
+      // -----------------------------------------------------------------------
+      // 5. Ambil Catatan & Kepribadian Siswa
+      // -----------------------------------------------------------------------
+      let kepribadian = { 
+        ibadah: 'B', 
+        akhlak: 'B', 
+        disiplin: 'B', 
+        catatan: isPTS 
+          ? 'Tingkatkan keaktifan belajar dan persiapan materi menjelang akhir semester.'
+          : 'Tingkatkan terus semangat belajar, ketekunan ibadah, dan kedisiplinanmu.' 
+      };
+
+      try {
+        if (isPTS) {
+          // Pada PTS, coba ambil catatan wali kelas dari kurikulum.rekappts
+          const [ptsRekap] = await fastify.mysql.kurikulum.query(
+            `SELECT catatan_walikelas FROM kurikulum.rekappts 
+             WHERE nis = ? AND (tahunajaran = ? OR tahunajaran IS NULL OR tahunajaran = "") 
+             ORDER BY replid DESC LIMIT 1`,
+            [nis, siswa.tahunajaran]
+          );
+          if (ptsRekap && ptsRekap.length > 0 && ptsRekap[0].catatan_walikelas) {
+            kepribadian.catatan = ptsRekap[0].catatan_walikelas;
+          }
+        }
+
+        // Ambil nilai sikap dari kepribadian jika ada
+        const [kepResult] = await fastify.mysql.kurikulum.query(
+          `SELECT ibadah, akhlak, disiplin, catatan 
+           FROM kurikulum.kepribadian 
+           WHERE nis = ? AND (tahunajaran = ? OR tahunajaran IS NULL OR tahunajaran = "")
+           ORDER BY replid DESC LIMIT 1`,
+          [nis, siswa.tahunajaran]
+        );
+        if (kepResult && kepResult.length > 0) {
+          kepribadian.ibadah = kepResult[0].ibadah || 'B';
+          kepribadian.akhlak = kepResult[0].akhlak || 'B';
+          kepribadian.disiplin = kepResult[0].disiplin || 'B';
+          if (kepResult[0].catatan && !isPTS) {
+            kepribadian.catatan = kepResult[0].catatan;
+          }
+        }
+      } catch (errKep) {
+        console.warn('Catatan/kepribadian note:', errKep.message);
+      }
+
+      // -----------------------------------------------------------------------
+      // 6. Ambil Data Kehadiran / Absensi
+      // -----------------------------------------------------------------------
       let kehadiran = { sakit: 0, izin: 0, alpa: 0 };
       try {
-          const [kehResult] = await fastify.mysql.kurikulum.query(
-              `SELECT sakit, izin, alpa 
-               FROM kehadiran 
-               WHERE nis = ? 
-               ORDER BY replid DESC LIMIT 1`,
-              [nis]
-          );
-          if (kehResult && kehResult.length > 0) {
-              kehadiran = {
-                  sakit: kehResult[0].sakit || 0,
-                  izin: kehResult[0].izin || 0,
-                  alpa: kehResult[0].alpa || 0
-              };
-          }
-      } catch (err) {
-          console.warn('Gagal memuat data kehadiran:', err.message);
+        const [kehResult] = await fastify.mysql.kurikulum.query(
+          `SELECT sakit, izin, alpa 
+           FROM kurikulum.kehadiran 
+           WHERE nis = ? AND (tahunajaran = ? OR tahunajaran IS NULL OR tahunajaran = "")
+           ORDER BY replid DESC LIMIT 1`,
+          [nis, siswa.tahunajaran]
+        );
+        if (kehResult && kehResult.length > 0) {
+          kehadiran = {
+            sakit: Number(kehResult[0].sakit || 0),
+            izin: Number(kehResult[0].izin || 0),
+            alpa: Number(kehResult[0].alpa || 0)
+          };
+        }
+      } catch (errKeh) {
+        console.warn('Absensi note:', errKeh.message);
       }
 
-      // 5. Ambil data wali kelas berdasarkan kelas aktif siswa secara sangat aman & multi-schema dengan tracing detail
-      let waliKelas = { nama: 'WALI KELAS', nip: '-' };
-      let traceLogs = [];
+      // -----------------------------------------------------------------------
+      // 7. Ambil Data Wali Kelas Secara Dinamis & Multi-Schema
+      // -----------------------------------------------------------------------
+      let waliKelas = { nama: `WALI KELAS ${siswa.kelas}`, nip: '-' };
       
       try {
-          // A. Jelajahi database untuk menemukan skema yang tersedia
-          try {
-              const [schemas] = await fastify.mysql.akad.query(`SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA`);
-              const schemaNames = schemas.map(s => s.SCHEMA_NAME || s.schema_name);
-              traceLogs.push(`Skema DB Tersedia: ${schemaNames.join(', ')}`);
-          } catch (eSchema) {
-              traceLogs.push(`Gagal membaca INFORMATION_SCHEMA: ${eSchema.message}`);
+        const [kelasRes] = await fastify.mysql.akad.query(
+          `SELECT k.* 
+           FROM jbsakad.siswa s 
+           JOIN jbsakad.kelas k ON s.idkelas = k.replid 
+           WHERE s.nis = ? LIMIT 1`,
+          [nis]
+        );
+
+        if (kelasRes && kelasRes.length > 0) {
+          const kRow = kelasRes[0];
+          const nipWali = kRow.nipwali || kRow.nipwalikelas || kRow.nipguru || kRow.nip;
+          const namaLangsung = kRow.walikelas || kRow.nama_wali || kRow.nama_walikelas || kRow.nama_guru;
+
+          if (namaLangsung) {
+            waliKelas.nama = String(namaLangsung).trim().toUpperCase();
           }
 
-          let kelasRow = null;
-          // Ambil kelasRow dengan join k.* yang sangat safe dari jbsakad.kelas
-          try {
-              const [kelasRes] = await fastify.mysql.akad.query(
-                  `SELECT k.* 
-                   FROM jbsakad.siswa s 
-                   JOIN jbsakad.kelas k ON s.idkelas = k.replid 
-                   WHERE s.nis = ? LIMIT 1`,
-                  [nis]
-              );
-              if (kelasRes && kelasRes.length > 0) {
-                  kelasRow = kelasRes[0];
-                  traceLogs.push(`kelasRow ketemu via JOIN: ${JSON.stringify(kelasRow)}`);
-              } else {
-                  traceLogs.push(`kelasRow kosong via JOIN untuk NIS: ${nis}`);
-              }
-          } catch (errJoin) {
-              traceLogs.push(`Gagal dengan query JOIN k.*: ${errJoin.message}`);
-              // Fallback: ambil idkelas dari siswa, lalu cari kelas
+          if (nipWali) {
+            const nipStr = String(nipWali).trim();
+            waliKelas.nip = nipStr;
+
+            // Cari nama lengkap dan gelar dari master tabel pegawai
+            const schemas = ['jbsakad', 'jbssdm', 'jbsadm'];
+            for (const sch of schemas) {
               try {
-                  const [siswaInfo] = await fastify.mysql.akad.query(
-                      `SELECT idkelas FROM jbsakad.siswa WHERE nis = ? LIMIT 1`,
-                      [nis]
-                  );
-                  if (siswaInfo && siswaInfo.length > 0 && siswaInfo[0].idkelas) {
-                      const idKelas = siswaInfo[0].idkelas;
-                      traceLogs.push(`Siswa idkelas: ${idKelas}`);
-                      const [kelasResDirect] = await fastify.mysql.akad.query(
-                          `SELECT * FROM jbsakad.kelas WHERE replid = ? LIMIT 1`,
-                          [idKelas]
-                      );
-                      if (kelasResDirect && kelasResDirect.length > 0) {
-                          kelasRow = kelasResDirect[0];
-                          traceLogs.push(`kelasRow ketemu via Direct replid: ${JSON.stringify(kelasRow)}`);
-                      } else {
-                          traceLogs.push(`kelasRow kosong untuk replid: ${idKelas}`);
-                      }
-                  } else {
-                      traceLogs.push(`Siswa info tidak ditemukan / idkelas kosong untuk NIS: ${nis}`);
-                  }
-              } catch (errFallback) {
-                  traceLogs.push(`Gagal fallback idkelas: ${errFallback.message}`);
-              }
+                const [pegRes] = await fastify.mysql.akad.query(
+                  `SELECT * FROM ${sch}.pegawai WHERE nip = ? LIMIT 1`,
+                  [nipStr]
+                );
+                if (pegRes && pegRes.length > 0 && pegRes[0].nama) {
+                  const pItem = pegRes[0];
+                  const gDepan = pItem.gelardepan ? `${pItem.gelardepan.trim()} ` : '';
+                  const gBelakang = pItem.gelarakhir || pItem.gelar ? `, ${pItem.gelarakhir || pItem.gelar}` : '';
+                  waliKelas.nama = `${gDepan}${pItem.nama.trim()}${gBelakang}`.toUpperCase();
+                  if (pItem.nip) waliKelas.nip = String(pItem.nip).trim();
+                  break;
+                }
+              } catch (_) {}
+            }
           }
-
-          if (kelasRow) {
-              // Ambil NIP wali kelas secara multi-kolom
-              const nipWali = kelasRow.nipwali || 
-                              kelasRow.nipwalikelas || 
-                              kelasRow.nip_walikelas || 
-                              kelasRow.idwalikelas || 
-                              kelasRow.idwali || 
-                              kelasRow.nip_wali_kelas || 
-                              kelasRow.idguru || 
-                              kelasRow.guru_nip ||
-                              kelasRow.wali_nip ||
-                              kelasRow.nip ||
-                              kelasRow.wali;
-                              
-              // Ambil nama wali kelas langsung jika tertulis di kolom kelasRow
-              const namaWaliLangsung = kelasRow.walikelas || 
-                                       kelasRow.nama_wali || 
-                                       kelasRow.nama_walikelas || 
-                                       kelasRow.wali || 
-                                       kelasRow.nama_guru || 
-                                       kelasRow.guru;
-                                       
-              traceLogs.push(`nipWali terdeteksi: "${nipWali}", namaWaliLangsung terdeteksi: "${namaWaliLangsung}"`);
-
-              if (namaWaliLangsung) {
-                  waliKelas.nama = String(namaWaliLangsung).trim().toUpperCase();
-              }
-              if (nipWali) {
-                  waliKelas.nip = String(nipWali).trim();
-              }
-              
-              if (nipWali) {
-                  const nipStr = String(nipWali).trim();
-
-                  // Cari nama pegawai/guru berdasarkan NIP pada beberapa skema DB JBS secara berurutan (jbssdm, jbsadm, jbsakad)
-                  let pegawaiFound = false;
-                  const targetSchemas = ['jbssdm', 'jbsadm', 'jbsakad', 'jikas_sdm', 'sdm', 'pegawai'];
-                  
-                  for (const schema of targetSchemas) {
-                      try {
-                          // Ambil * untuk menghindari error kolom gelarakhir yang tidak ada
-                          let [pegRes] = await fastify.mysql.akad.query(
-                              `SELECT * FROM ${schema}.pegawai WHERE nip = ? LIMIT 1`,
-                              [nipStr]
-                          );
-                          
-                          traceLogs.push(`Coba skema ${schema} dengan NIP "${nipStr}": ${pegRes ? pegRes.length : 0} baris.`);
-                          
-                          // Jika belum ketemu dengan nip = nipStr, coba cari dengan sql replid jika nipStr berupa angka/ID
-                          if ((!pegRes || pegRes.length === 0) && /^\d+$/.test(nipStr)) {
-                              [pegRes] = await fastify.mysql.akad.query(
-                                  `SELECT * FROM ${schema}.pegawai WHERE replid = ? LIMIT 1`,
-                                  [parseInt(nipStr, 10)]
-                              );
-                              traceLogs.push(`Coba skema ${schema} dengan replid "${nipStr}": ${pegRes ? pegRes.length : 0} baris.`);
-                          }
-                          if ((!pegRes || pegRes.length === 0) && /^\d+$/.test(nipStr)) {
-                              [pegRes] = await fastify.mysql.akad.query(
-                                  `SELECT * FROM ${schema}.pegawai WHERE id = ? LIMIT 1`,
-                                  [parseInt(nipStr, 10)]
-                              );
-                              traceLogs.push(`Coba skema ${schema} dengan id "${nipStr}": ${pegRes ? pegRes.length : 0} baris.`);
-                          }
-
-                          if (pegRes && pegRes.length > 0 && pegRes[0].nama) {
-                              const item = pegRes[0];
-                              const gelar = item.gelarakhir || item.gelar || item.gelar_belakang || '';
-                              const canGelar = gelar ? `, ${gelar}` : '';
-                              waliKelas.nama = `${item.nama.trim()}${canGelar}`.toUpperCase();
-                              
-                              if (item.nip) {
-                                  waliKelas.nip = String(item.nip).trim();
-                              }
-                              
-                              pegawaiFound = true;
-                              traceLogs.push(`Ketemu pegawai di ${schema}: ${waliKelas.nama} (NIP: ${waliKelas.nip})`);
-                              break;
-                          }
-                      } catch (errSchema) {
-                          traceLogs.push(`Gagal query skema ${schema}: ${errSchema.message}`);
-                      }
-                  }
-
-                  // Jika pegawai tidak ditemukan di mana pun, mari kita coba jelajahi salah satu tabel pegawai untuk debugging dsb
-                  if (!pegawaiFound) {
-                      traceLogs.push(`Pegawai NIP "${nipStr}" tidak ditemukan di database dengan query standar.`);
-                      // Coba Ambil data sampel pegawai jbssdm
-                      try {
-                          const [sampelPeg] = await fastify.mysql.akad.query(`SELECT * FROM jbssdm.pegawai LIMIT 2`);
-                          traceLogs.push(`Sampel tabel jbssdm.pegawai: ${JSON.stringify(sampelPeg)}`);
-                      } catch (errSampel) {
-                          traceLogs.push(`Gagal mengambil sampel jbssdm.pegawai: ${errSampel.message}`);
-                      }
-                  }
-              }
-          }
-      } catch (err) {
-          traceLogs.push(`Sistem gagal memuat profil wali kelas secara total: ${err.message}`);
+        }
+      } catch (errWali) {
+        console.warn('Wali kelas note:', errWali.message);
       }
 
-      // Helper Fungsi untuk Terjemahan Nilai ke Kata Bahasa Indonesia (Nilai Huruf)
-      function numberToWords(num) {
-          const val = Math.round(Number(num));
-          if (isNaN(val) || val < 0 || val > 100) return '-';
-          if (val === 0) return 'nol';
-          if (val === 100) return 'seratus';
-          
-          const belasan = ['sepuluh', 'sebelas', 'dua belas', 'tiga belas', 'empat belas', 'lima belas', 'enam belas', 'tujuh belas', 'delapan belas', 'sembilan belas'];
-          const puluhan = ['', '', 'dua puluh', 'tiga puluh', 'empat puluh', 'lima puluh', 'enam puluh', 'tujuh puluh', 'delapan puluh', 'sembilan puluh'];
-          const satuan = ['', 'satu', 'dua', 'tiga', 'empat', 'lima', 'enam', 'tujuh', 'delapan', 'sembilan'];
-          
-          if (val < 10) return satuan[val];
-          if (val < 20) return belasan[val - 10];
-          
-          const puluhDigit = Math.floor(val / 10);
-          const sisaDigit = val % 10;
-          return (puluhan[puluhDigit] + ' ' + satuan[sisaDigit]).trim();
+      // -----------------------------------------------------------------------
+      // 8. Ambil Data Kepala Sekolah Secara Dinamis (Bebas Hardcode)
+      // -----------------------------------------------------------------------
+      let kepalaSekolah = {
+        nama: "SITI MUNIROH, S.Pd.I., M.M",
+        nip: "-"
+      };
+
+      try {
+        const [kepsekRes] = await fastify.mysql.akad.query(`
+          SELECT * FROM jbsakad.pegawai 
+          WHERE jabatan LIKE '%Kepala Sekolah%' 
+             OR jabatan LIKE '%Kepala SD%' 
+             OR jabatan LIKE '%Kepala%' 
+          ORDER BY replid ASC LIMIT 1
+        `);
+
+        if (kepsekRes && kepsekRes.length > 0) {
+          const item = kepsekRes[0];
+          const gDepan = item.gelardepan ? `${item.gelardepan.trim()} ` : '';
+          const gBelakang = item.gelarakhir || item.gelar ? `, ${item.gelarakhir || item.gelar}` : '';
+          kepalaSekolah.nama = `${gDepan}${item.nama.trim()}${gBelakang}`.toUpperCase();
+          if (item.nip) kepalaSekolah.nip = String(item.nip).trim();
+        }
+      } catch (eKepsek) {
+        console.warn('Kepala sekolah note:', eKepsek.message);
       }
 
-      // Hitung Total & Rata-rata Nilai
+      if (request.query.kepsek) {
+        kepalaSekolah.nama = String(request.query.kepsek).trim().toUpperCase();
+      }
+
+      // -----------------------------------------------------------------------
+      // 9. Tanggal & Lokasi Tanda Tangan Dinamis
+      // -----------------------------------------------------------------------
+      const kotaClean = sekolah.kota 
+        ? sekolah.kota.replace(/kota\s+/i, '').replace(/kabupaten\s+/i, '').trim()
+        : 'Jakarta';
+      
+      const tanggalCetakTeks = request.query.tanggal 
+        ? String(request.query.tanggal).trim() 
+        : `${kotaClean}, ${formatTanggalIndonesia()}`;
+
+      // -----------------------------------------------------------------------
+      // 10. Kalkulasi Total & Rata-rata Nilai
+      // -----------------------------------------------------------------------
       let totalNilai = 0;
       raporResult.forEach(r => {
-          totalNilai += Number(r.nilaiakhir || 0);
+        totalNilai += Number(r.nilaiakhir || 0);
       });
       const rataRata = raporResult.length > 0 ? (totalNilai / raporResult.length) : 0;
 
-      // Kualifikasi Nilai
       let kualifikasiNilai = 'D (PERLU BIMBINGAN)';
       if (rataRata >= 89) kualifikasiNilai = 'A (SANGAT BAIK)';
       else if (rataRata >= 77) kualifikasiNilai = 'B (BAIK)';
       else if (rataRata >= 65) kualifikasiNilai = 'C (CUKUP)';
 
-      const s = {
-          nama: "SD ISLAM HIDAYATUL ISLAMIYAH",
-          alamat: "Jl. Sapi Perah Rt 003/02, PONDOK RANGGON",
-          kontak: "Telp: 8440279"
-      };
+      // Judul Kop Rapor
+      const judulKop = isPTS 
+        ? `RAPOR PENILAIAN TENGAH SEMESTER (${semesterNama.toUpperCase()})` 
+        : (isSemesterGenap ? 'RAPOR PENILAIAN SUMATIF AKHIR SEMESTER II' : 'RAPOR PENILAIAN AKHIR SEMESTER I (GANJIL)');
+      
+      const subJudulKop = isPTS ? 'LAPORAN HASIL BELAJAR SISIPAN' : 'TERPADU';
 
+      // -----------------------------------------------------------------------
+      // 11. GENERATE HTML CETAK (Clean, Responsive, Standar Ukuran Folio / F4)
+      // -----------------------------------------------------------------------
       const html = `<!DOCTYPE html>
 <html lang="id">
 <head>
     <meta charset="utf-8">
-    <title>E-Rapor Terpadu - ${siswa.nama}</title>
+    <title>E-Rapor ${modeLabel} - ${siswa.nama} (${siswa.kelas})</title>
     <style>
         @page { 
-            size: 8.5in 13in; 
+            size: 8.5in 13in; /* Standar Ukuran Folio / F4 */
             margin: 0; 
         }
         @media print {
             .no-print {
                 display: none !important;
             }
+            body {
+                background: #ffffff !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
         }
         body { 
             font-family: Arial, sans-serif; 
             color: #000000; 
-            background-color: #ffffff; 
+            background-color: #f1f5f9; 
             margin: 0; 
             padding: 0; 
             font-size: 11px;
             line-height: 1.35;
         }
         .print-container {
-            padding: 0.4in 0.5in;
+            padding: 0.35in 0.45in;
             box-sizing: border-box;
             width: 100%;
+            max-width: 8.5in;
+            margin: 0 auto;
+            background: #ffffff;
         }
         .outer-border {
-            border: 3px solid #4a6b53; 
+            border: 3px solid ${isPTS ? '#d97706' : '#4a6b53'}; 
             padding: 16px; 
             box-sizing: border-box; 
             min-height: 285mm;
@@ -408,6 +485,7 @@ module.exports = function (fastify, opts, next) {
             font-size: 11px; 
             font-weight: bold; 
             text-transform: uppercase; 
+            color: ${isPTS ? '#b45309' : '#1a4d2e'};
         }
         .kop h3 { 
             margin: 2px 0 0 0; 
@@ -430,7 +508,7 @@ module.exports = function (fastify, opts, next) {
             display: flex;
         }
         .info-col .label {
-            width: 110px;
+            width: 115px;
             font-weight: normal;
             flex-shrink: 0;
         }
@@ -453,7 +531,7 @@ module.exports = function (fastify, opts, next) {
             background-color: #f8fafc;
             font-weight: bold;
             text-align: center;
-            font-size: 9.5px;
+            font-size: 9px;
         }
         .table-rapor td { 
             border: 1px solid #000000; 
@@ -474,6 +552,9 @@ module.exports = function (fastify, opts, next) {
             margin-top: 6px;
             font-weight: bold;
             font-size: 10px;
+            padding: 4px 8px;
+            background: #f8fafc;
+            border: 1px dashed #94a3b8;
         }
         .double-charts {
             display: flex;
@@ -492,7 +573,7 @@ module.exports = function (fastify, opts, next) {
         .chart-table th {
             border: 1px solid #000000;
             padding: 4px;
-            background-color: #4a6b53;
+            background-color: ${isPTS ? '#d97706' : '#4a6b53'};
             color: #ffffff;
             font-weight: bold;
         }
@@ -504,7 +585,7 @@ module.exports = function (fastify, opts, next) {
         }
         .keterangan-box {
             width: 48%;
-            border: 1.5px solid #4a6b53;
+            border: 1.5px solid ${isPTS ? '#d97706' : '#4a6b53'};
             border-radius: 6px;
             padding: 6px 10px;
             background-color: #ffffff;
@@ -528,7 +609,7 @@ module.exports = function (fastify, opts, next) {
         }
         .signatures {
             margin-top: 14px;
-            font-size: 10.5px;
+            font-size: 10px;
             border-top: 1px dashed #cccccc;
             padding-top: 8px;
         }
@@ -538,7 +619,7 @@ module.exports = function (fastify, opts, next) {
         }
         .sig-col {
             text-align: center;
-            width: 200px;
+            width: 210px;
         }
         .sig-name {
             font-weight: 800;
@@ -553,208 +634,296 @@ module.exports = function (fastify, opts, next) {
     </style>
 </head>
 <body>
-    <!-- Floating Action Bar / Menu Utama (Hanya terlihat di layar komputer/HP, otomatis tersembunyi saat diprint/save PDF) -->
-    <div class="no-print" style="position: sticky; top: 0; left: 0; right: 0; background: #0f172a; color: #ffffff; padding: 10px 20px; box-shadow: 0 4px 12px rbg(0 0 0 / 0.15); z-index: 99999; display: flex; align-items: center; justify-between: space-between; justify-content: space-between; font-family: system-ui, -apple-system, sans-serif;">
-        <div style="display: flex; align-items: center; gap: 8px;">
-            <span style="background: #10b981; width: 8px; height: 8px; border-radius: 50%; animate: pulse 2s infinite;"></span>
-            <span style="font-size: 12.5px; font-weight: 600; letter-spacing: 0.3px; color: #f8fafc;">E-Rapor Terpadu - Mode Cetak & PDF</span>
+    <!-- Floating Action Bar / Menu Utama (Hanya terlihat di layar monitor/HP) -->
+    <div class="no-print" style="position: sticky; top: 0; left: 0; right: 0; background: #0f172a; color: #ffffff; padding: 10px 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 99999; display: flex; align-items: center; justify-content: space-between; font-family: system-ui, -apple-system, sans-serif;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <span style="background: ${isPTS ? '#f59e0b' : '#10b981'}; width: 10px; height: 10px; border-radius: 50%;"></span>
+            <div>
+                <span style="font-size: 13px; font-weight: 700; color: #f8fafc;">
+                    E-Rapor ${isPTS ? 'Tengah Semester (PTS)' : 'Akhir Semester (PAS)'} - Mode Cetak Folio (F4)
+                </span>
+                <span style="display: block; font-size: 10.5px; color: #94a3b8;">
+                    ${siswa.nama} • Kelas ${siswa.kelas} • TA ${siswa.tahunajaran}
+                </span>
+            </div>
         </div>
-        <div style="display: flex; gap: 10px;">
-            <button onclick="window.print()" style="background: #10b981; color: #ffffff; border: none; padding: 6px 14px; border-radius: 5px; font-size: 11.5px; font-weight: bold; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 2px 4px rgba(16, 185, 129, 0.2); transition: all 0.2s;">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect><path d="M6 9V2h12v7"></path></svg>
-                Cetak Rapor / Simpan PDF
+        <div style="display: flex; gap: 8px; align-items: center;">
+            <button onclick="window.print()" style="background: ${isPTS ? '#d97706' : '#10b981'}; color: #ffffff; border: none; padding: 7px 16px; border-radius: 6px; font-size: 11.5px; font-weight: bold; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
+                🖨️ Cetak / Simpan PDF
             </button>
-            <button onclick="window.close()" style="background: #334155; color: #e2e8f0; border: none; padding: 6px 12px; border-radius: 5px; font-size: 11px; font-weight: 500; cursor: pointer; transition: all 0.2s;">
-                Tutup Halaman
+            <button onclick="window.close()" style="background: #334155; color: #e2e8f0; border: none; padding: 7px 12px; border-radius: 6px; font-size: 11px; font-weight: 500; cursor: pointer;">
+                ✕ Tutup
             </button>
         </div>
     </div>
 
     <div class="print-container">
       <div class="outer-border">
-    <div>
-        <!-- Kop Instansi Pendidikan -->
-        <div class="kop">
-            <h1>RAPOR PENILAIAN SUMATIF AKHIR SEMESTER II</h1>
-            <h2>TERPADU</h2>
-            <h3>${s.nama}</h3>
-        </div>
-        
-        <!-- Informasi Identitas Siswa -->
-        <div class="info-grid">
-            <div class="info-col">
-                <p><span class="label">Nama Siswa</span><span class="divider">:</span><span class="val" style="text-transform: uppercase;">${siswa.nama}</span></p>
-                <p><span class="label">No. Induk (NIS)</span><span class="divider">:</span><span class="val">${siswa.nis}</span></p>
-                <p><span class="label">NISN</span><span class="divider">:</span><span class="val">${siswa.nisn || '-'}</span></p>
+        <div>
+            <!-- Kop Instansi Pendidikan Dinamis -->
+            <div class="kop">
+                <h1>${judulKop}</h1>
+                <h2>${subJudulKop}</h2>
+                <h3>${sekolah.nama}</h3>
+                <div style="font-size: 9.5px; color: #64748b; margin-top: 1px;">
+                    ${sekolah.alamat} • ${sekolah.telepon}
+                </div>
             </div>
-            <div class="info-col">
-                <p><span class="label">Kelas</span><span class="divider">:</span><span class="val">${siswa.kelas || '-'}</span></p>
-                <p><span class="label">Semester</span><span class="divider">:</span><span class="val">Genap</span></p>
-                <p><span class="label">Tahun Pelajaran</span><span class="divider">:</span><span class="val">${siswa.tahunajaran || '2025/2026'}</span></p>
+            
+            <!-- Informasi Identitas Siswa -->
+            <div class="info-grid">
+                <div class="info-col">
+                    <p><span class="label">Nama Siswa</span><span class="divider">:</span><span class="val" style="text-transform: uppercase;">${siswa.nama}</span></p>
+                    <p><span class="label">No. Induk (NIS)</span><span class="divider">:</span><span class="val">${siswa.nis}</span></p>
+                    <p><span class="label">NISN</span><span class="divider">:</span><span class="val">${siswa.nisn}</span></p>
+                </div>
+                <div class="info-col">
+                    <p><span class="label">Kelas</span><span class="divider">:</span><span class="val">Kelas ${siswa.kelas}</span></p>
+                    <p><span class="label">Semester</span><span class="divider">:</span><span class="val">${semesterNama} (${semesterAngka})</span></p>
+                    <p><span class="label">Tahun Pelajaran</span><span class="divider">:</span><span class="val">${siswa.tahunajaran}</span></p>
+                </div>
             </div>
-        </div>
-        
-        <!-- Tabel Daftar Nilai Akademik -->
-        <table class="table-rapor">
-            <thead>
-                <tr>
-                    <th style="width: 5%;">NO</th>
-                    <th style="width: 35%; text-align: left;">MATA PELAJARAN</th>
-                    <th style="width: 10%;">KKM</th>
-                    <th style="width: 12%;">NILAI ANGKA</th>
-                    <th style="width: 28%; text-align: left;">NILAI HURUF</th>
-                    <th style="width: 10%;">PREDIKAT</th>
-                </tr>
-            </thead>
-            <tbody>
-                ${raporResult.map((r, i) => `
+            
+            <!-- Tabel Daftar Nilai Akademik Dinamis (Disesuaikan PTS / PAS) -->
+            <table class="table-rapor">
+                <thead>
+                    ${isPTS ? `
                     <tr>
-                        <td class="text-center">${i + 1}</td>
-                        <td class="font-extrabold">${r.mapel}</td>
-                        <td class="text-center">${r.kkm || 70}</td>
-                        <td class="text-center font-extrabold">${r.nilaiakhir}</td>
-                        <td class="text-left" style="text-transform: capitalize;">${r.nilaihuruf || numberToWords(r.nilaiakhir)}</td>
-                        <td class="text-center font-bold">${r.predikat || 'B'}</td>
+                        <th style="width: 5%;">NO</th>
+                        <th style="width: 33%; text-align: left;">MATA PELAJARAN</th>
+                        <th style="width: 8%;">KKM</th>
+                        <th style="width: 12%;">NILAI HARIAN (PH)</th>
+                        <th style="width: 12%;">TES PTS</th>
+                        <th style="width: 10%;">AKHIR PTS</th>
+                        <th style="width: 10%;">PREDIKAT</th>
                     </tr>
-                `).join('')}
-                ${raporResult.length === 0 ? `
+                    ` : `
                     <tr>
-                        <td colspan="6" class="text-center" style="padding: 15px; color: #64748b; font-style: italic;">
-                            Belum ada nilai akademik terdata untuk siswa ini.
+                        <th style="width: 5%;">NO</th>
+                        <th style="width: 35%; text-align: left;">MATA PELAJARAN</th>
+                        <th style="width: 10%;">KKM</th>
+                        <th style="width: 12%;">NILAI ANGKA</th>
+                        <th style="width: 28%; text-align: left;">NILAI HURUF</th>
+                        <th style="width: 10%;">PREDIKAT</th>
+                    </tr>
+                    `}
+                </thead>
+                <tbody>
+                    ${raporResult.map((r, i) => {
+                      if (isPTS) {
+                        return `
+                        <tr>
+                            <td class="text-center">${i + 1}</td>
+                            <td class="font-extrabold">${r.mapel}</td>
+                            <td class="text-center">${r.kkm || 75}</td>
+                            <td class="text-center font-bold">${r.nilai_ph !== undefined ? r.nilai_ph : '-'}</td>
+                            <td class="text-center font-bold">${r.nilai_pts !== undefined ? r.nilai_pts : '-'}</td>
+                            <td class="text-center font-extrabold" style="color: #b45309;">${r.nilaiakhir}</td>
+                            <td class="text-center font-bold">${r.predikat || 'B'}</td>
+                        </tr>
+                        `;
+                      } else {
+                        return `
+                        <tr>
+                            <td class="text-center">${i + 1}</td>
+                            <td class="font-extrabold">${r.mapel}</td>
+                            <td class="text-center">${r.kkm || 75}</td>
+                            <td class="text-center font-extrabold">${r.nilaiakhir}</td>
+                            <td class="text-left" style="text-transform: capitalize;">${r.nilaihuruf || numberToWords(r.nilaiakhir)}</td>
+                            <td class="text-center font-bold">${r.predikat || 'B'}</td>
+                        </tr>
+                        `;
+                      }
+                    }).join('')}
+                    ${raporResult.length === 0 ? `
+                        <tr>
+                            <td colspan="${isPTS ? '7' : '6'}" class="text-center" style="padding: 18px; color: #64748b; font-style: italic;">
+                                Belum ada input data nilai ${modeLabel} untuk siswa ini di Tahun Ajaran ${siswa.tahunajaran}.
+                            </td>
+                        </tr>
+                    ` : ''}
+                    <tr class="font-bold">
+                        <td colspan="3" style="font-size: 9px; text-transform: uppercase;">JUMLAH NILAI</td>
+                        <td class="text-center font-extrabold">${totalNilai}</td>
+                        <td colspan="${isPTS ? '3' : '2'}"></td>
+                    </tr>
+                    <tr class="font-bold">
+                        <td colspan="3" style="font-size: 9px; text-transform: uppercase;">RATA-RATA</td>
+                        <td class="text-center font-extrabold">${rataRata.toFixed(2)}</td>
+                        <td colspan="${isPTS ? '3' : '2'}"></td>
+                    </tr>
+                    <tr class="font-bold">
+                        <td colspan="3" style="font-size: 9px; text-transform: uppercase;">KUALIFIKASI PRESTASI</td>
+                        <td colspan="${isPTS ? '4' : '3'}" class="text-center font-black" style="color: ${isPTS ? '#b45309' : '#4a6b53'}; font-size: 10.5px;">
+                            ${kualifikasiNilai}
                         </td>
                     </tr>
-                ` : ''}
-                <tr class="font-bold">
-                    <td colspan="3" style="font-size: 9px; text-transform: uppercase;">JUMLAH</td>
-                    <td class="text-center font-extrabold">${totalNilai}</td>
-                    <td colspan="2"></td>
-                </tr>
-                <tr class="font-bold">
-                    <td colspan="3" style="font-size: 9px; text-transform: uppercase;">RATA-RATA</td>
-                    <td class="text-center font-extrabold">${rataRata.toFixed(2)}</td>
-                    <td colspan="2"></td>
-                </tr>
-                <tr class="font-bold">
-                    <td colspan="3" style="font-size: 9px; text-transform: uppercase;">KUALIFIKASI NILAI</td>
-                    <td colspan="3" class="text-center font-black" style="color: #4a6b53;">${kualifikasiNilai}</td>
-                </tr>
-            </tbody>
-        </table>
+                </tbody>
+            </table>
 
-        <!-- Catatan Wali Kelas -->
-        <div class="catatan-box">
-            <div class="font-bold">Catatan :</div>
-            <div style="font-style: italic; margin-top: 3px; font-weight: bold;">
-                ${kepribadian.catatan}
-            </div>
-        </div>
-
-        <!-- Status Kenaikan Kelas -->
-        <div class="promotion-status">
-            Naik kelas / <span style="text-decoration: line-through;">Tinggal kelas</span>
-        </div>
-
-        <!-- Tabel kehadiran, kepribadian, & legenda nilai -->
-        <div class="double-charts">
-            <div class="chart-half" style="display: flex; flex-direction: column; gap: 8px;">
-                <div>
-                    <div class="font-bold" style="margin-bottom: 2px;">Kehadiran :</div>
-                    <table class="chart-table">
-                        <thead>
-                            <tr>
-                                <th>Sakit</th>
-                                <th>Ijin</th>
-                                <th>Alpha</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td>${kehadiran.sakit}</td>
-                                <td>${kehadiran.izin}</td>
-                                <td>${kehadiran.alpa}</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-                <div>
-                    <div class="font-bold" style="margin-bottom: 2px;">Kepribadian :</div>
-                    <table class="chart-table">
-                        <thead>
-                            <tr>
-                                <th>Ibadah</th>
-                                <th>Akhlak</th>
-                                <th>Disiplin</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td>${kepribadian.ibadah}</td>
-                                <td>${kepribadian.akhlak}</td>
-                                <td>${kepribadian.disiplin}</td>
-                            </tr>
-                        </tbody>
-                    </table>
+            <!-- Catatan Wali Kelas Dinamis -->
+            <div class="catatan-box">
+                <div class="font-bold">Catatan Wali Kelas :</div>
+                <div style="font-style: italic; margin-top: 3px; font-weight: bold; color: #334155;">
+                    "${kepribadian.catatan}"
                 </div>
             </div>
 
-            <div class="keterangan-box">
-                <div class="text-center font-bold" style="color: #4a6b53; border-bottom: 1px solid #e2e8f0; padding-bottom: 3px; margin-bottom: 3px; text-transform: uppercase;">KETERANGAN</div>
-                <div class="keterangan-row">
-                    <span>89 – 100</span> <span class="font-bold">= A (Sangat Baik)</span>
+            <!-- Status Kenaikan Kelas (Hanya tampil pada PAS Semester Genap, TIDAK TAMPIL di PTS atau Semester Ganjil) -->
+            ${(!isPTS && isSemesterGenap) ? `
+            <div class="promotion-status">
+                Keterangan Akhir Tahun : Naik ke Kelas / <span style="text-decoration: line-through;">Tinggal di Kelas</span> ........................
+            </div>
+            ` : ''}
+
+            <!-- Tabel Kehadiran, Kepribadian, & Legenda Nilai -->
+            <div class="double-charts">
+                <div class="chart-half" style="display: flex; flex-direction: column; gap: 8px;">
+                    <div>
+                        <div class="font-bold" style="margin-bottom: 2px;">Ketidakhadiran :</div>
+                        <table class="chart-table">
+                            <thead>
+                                <tr>
+                                    <th>Sakit</th>
+                                    <th>Izin</th>
+                                    <th>Tanpa Keterangan</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>${kehadiran.sakit} hari</td>
+                                    <td>${kehadiran.izin} hari</td>
+                                    <td>${kehadiran.alpa} hari</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    ${!isPTS ? `
+                    <div>
+                        <div class="font-bold" style="margin-bottom: 2px;">Sikap & Kepribadian :</div>
+                        <table class="chart-table">
+                            <thead>
+                                <tr>
+                                    <th>Ibadah</th>
+                                    <th>Akhlak</th>
+                                    <th>Kedisiplinan</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>${kepribadian.ibadah}</td>
+                                    <td>${kepribadian.akhlak}</td>
+                                    <td>${kepribadian.disiplin}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    ` : `
+                    <div style="font-size: 9px; color: #64748b; font-style: italic; border: 1px dashed #cbd5e1; padding: 4px 6px; border-radius: 4px;">
+                        * Laporan PTS merupakan evaluasi progres capaian 3 bulan pertama. Seluruh kompetensi akan dituntaskan pada akhir semester.
+                    </div>
+                    `}
                 </div>
-                <div class="keterangan-row">
-                    <span>77 – 88</span> <span class="font-bold">= B (Baik)</span>
-                </div>
-                <div class="keterangan-row">
-                    <span>65 – 76</span> <span class="font-bold">= C (Cukup)</span>
-                </div>
-                <div class="keterangan-row">
-                    <span>&le; 64</span> <span class="font-bold">= D (Perlu Bimbingan)</span>
+
+                <div class="keterangan-box">
+                    <div class="text-center font-bold" style="color: ${isPTS ? '#b45309' : '#4a6b53'}; border-bottom: 1px solid #e2e8f0; padding-bottom: 3px; margin-bottom: 3px; text-transform: uppercase;">
+                        RENTANG NILAI & PREDIKAT
+                    </div>
+                    <div class="keterangan-row">
+                        <span>89 – 100</span> <span class="font-bold">= A (Sangat Baik)</span>
+                    </div>
+                    <div class="keterangan-row">
+                        <span>77 – 88</span> <span class="font-bold">= B (Baik)</span>
+                    </div>
+                    <div class="keterangan-row">
+                        <span>65 – 76</span> <span class="font-bold">= C (Cukup)</span>
+                    </div>
+                    <div class="keterangan-row">
+                        <span>&le; 64</span> <span class="font-bold">= D (Perlu Bimbingan)</span>
+                    </div>
                 </div>
             </div>
         </div>
+
+        <!-- Bagian Tanda Tangan Pengesahan Dinamis (Bebas Hardcode) -->
+        <div class="signatures">
+            <div class="sig-row">
+                <div class="sig-col">
+                    <p>Mengetahui,</p>
+                    <p class="font-bold">Orang Tua / Wali Murid</p>
+                    <p style="margin-top: 40px; font-weight: bold;">.......................................................</p>
+                </div>
+                <div class="sig-col">
+                    <p>${tanggalCetakTeks}</p>
+                    <p class="font-bold">Guru Kelas / Wali Kelas ${siswa.kelas}</p>
+                    <p class="sig-name">${waliKelas.nama}</p>
+                    <div style="font-size: 9px; color: #475569; margin-top: 1px;">
+                        ${waliKelas.nip && waliKelas.nip !== '-' ? `NIP. ${waliKelas.nip}` : ''}
+                    </div>
+                </div>
+            </div>
+            <div class="sig-kepsek">
+                <p class="font-bold" style="margin-bottom: 2px;">Mengetahui,</p>
+                <p class="font-bold">Kepala ${sekolah.nama}</p>
+                <p class="sig-name" style="margin-top: 35px;">${kepalaSekolah.nama}</p>
+                <div style="font-size: 9px; color: #475569; margin-top: 1px;">
+                    ${kepalaSekolah.nip && kepalaSekolah.nip !== '-' ? `NIP. ${kepalaSekolah.nip}` : ''}
+                </div>
+            </div>
+        </div>
+      </div>
     </div>
-
-    <!-- Bagian Tanda Tangan Pengesahan -->
-    <div class="signatures">
-        <div class="sig-row">
-            <div class="sig-col">
-                <p>Mengetahui,</p>
-                <p class="font-bold">Orang Tua Wali</p>
-                <p style="margin-top: 40px; font-weight: bold;">.......................................................</p>
-            </div>
-            <div class="sig-col">
-                <p>Jakarta, 26 Juni 2026</p>
-                <p class="font-bold">Guru Terpadu ${siswa.kelas || '-'}</p>
-                <p class="sig-name">${waliKelas.nama}</p>
-            </div>
-        </div>
-        <div class="sig-kepsek">
-            <p class="font-bold" style="margin-bottom: 2px;">Mengetahui,</p>
-            <p class="font-bold">Kepala Sekolah</p>
-            <p class="sig-name" style="margin-top: 35px;">SITI MUNIROH, S.Pd.I., M.M</p>
-        </div>
-    </div>
-  </div>
-</div>
-  
-  <script>
-    // Otomatis memicu dialog cetak/PDF setelah seluruh halaman termuat sempurna (dengan jeda singkat)
-    window.addEventListener('DOMContentLoaded', () => {
-        setTimeout(() => {
-            window.print();
-        }, 500);
-    });
-  </script>
+      
+    <script>
+      // Otomatis memicu dialog cetak printer / save PDF begitu halaman selesai dimuat
+      window.addEventListener('DOMContentLoaded', () => {
+          setTimeout(() => {
+              window.print();
+          }, 450);
+      });
+    </script>
 </body>
 </html>`;
 
       return reply.type('text/html').send(html);
     } catch (error) {
-      console.error(error);
+      console.error('Fatal print error:', error);
       return reply.code(500).send({ status: 'error', pesan: error.message });
     }
+  };
+
+  // ---------------------------------------------------------------------------
+  // DAFTARKAN RUTE CETAK CEPAT (Dukung Berbagai Variasi Pemanggilan & Prefix)
+  // ---------------------------------------------------------------------------
+  
+  // 1. Rute Standar Terpadu (PAS, atau kirim ?jenis=PTS untuk PTS)
+  fastify.get('/print/terpadu/:nis', printHandler);
+  fastify.get('/api/rapor/print/terpadu/:nis', printHandler);
+
+  // 2. Rute Khusus PTS Langsung
+  fastify.get('/print/pts/:nis', async (req, reply) => {
+    req.params.jenis = 'PTS';
+    return printHandler(req, reply);
   });
+  fastify.get('/api/rapor/print/pts/:nis', async (req, reply) => {
+    req.params.jenis = 'PTS';
+    return printHandler(req, reply);
+  });
+
+  // 3. Rute Khusus PAS Langsung
+  fastify.get('/print/pas/:nis', async (req, reply) => {
+    req.params.jenis = 'PAS';
+    return printHandler(req, reply);
+  });
+  fastify.get('/api/rapor/print/pas/:nis', async (req, reply) => {
+    req.params.jenis = 'PAS';
+    return printHandler(req, reply);
+  });
+
+  // 4. Rute Parameter Dinamis: /print/:jenis/:nis (contoh: /print/pts/10291)
+  fastify.get('/print/:jenis/:nis', printHandler);
+  fastify.get('/api/rapor/print/:jenis/:nis', printHandler);
 
   next();
 };
