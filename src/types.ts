@@ -23,17 +23,22 @@ export interface Teacher {
   level?: number;
 }
 
+export type PenilaianType = 'PAS' | 'PTS';
+
 export interface Grade {
   replid?: number;
   nis: string;
   idpelajaran: number;
   nipguru: string;
   kkm: number;
+  nilai_ph?: number; // Nilai Penilaian Harian / Formatif (khusus PTS)
+  nilai_pts?: number; // Nilai Ujian Tengah Semester (khusus PTS)
   nilaiakhir: number;
   nilaihuruf: string;
   predikat: string;
   catatanguru: string;
   tahunajaran?: string;
+  jenis?: PenilaianType; // 'PAS' | 'PTS'
   createdAt?: string;
 }
 
@@ -70,10 +75,16 @@ export interface RekapRapor {
   jumlah_mapel: number;
   total_nilai: number;
   rata_rata: number;
-  ibadah: string;
-  akhlak: string;
-  disiplin: string;
+  ibadah?: string;
+  akhlak?: string;
+  disiplin?: string;
+  sakit?: number;
+  izin?: number;
+  alpa?: number;
+  catatan_walikelas?: string;
   nama_siswa?: string;
   idkelas?: string;
+  kelas?: string;
+  jenis?: PenilaianType;
   last_update?: string;
 }

@@ -177,17 +177,22 @@ export default function App() {
     loadStudentsApi();
   }, [tahunAjaran]);
 
-  // 2b. Load school-year-dependent resources (Grades, Attendances) dynamically
+  // 2b. Load school-year-dependent resources (Grades for PAS & PTS, Attendances) dynamically
   useEffect(() => {
     async function loadGradesApi() {
       setIsLoadingGrades(true);
+      const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'https://fastify.nganjuk.net';
+      let combinedGrades: Grade[] = [];
+      let hasApiSuccess = false;
+
+      // 1. Fetch PAS / Terpadu grades
       try {
-        const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'https://fastify.nganjuk.net';
         const response = await fetch(`${apiBaseUrl}/api/rapor/terpadu?tahunajaran=${encodeURIComponent(tahunAjaran)}`);
         if (response.ok) {
           const result = await response.json();
           if (result && result.status === 'sukses' && Array.isArray(result.data)) {
-            const apiGrades: Grade[] = result.data.map((item: any) => ({
+            hasApiSuccess = true;
+            const pasGrades: Grade[] = result.data.map((item: any) => ({
               replid: item.replid ? Number(item.replid) : undefined,
               nis: String(item.nis),
               idpelajaran: Number(item.idpelajaran),
@@ -197,17 +202,50 @@ export default function App() {
               nilaihuruf: String(item.nilaihuruf),
               predikat: String(item.predikat),
               catatanguru: String(item.catatanguru || ''),
-              tahunajaran: String(item.tahunajaran || tahunAjaran)
+              tahunajaran: String(item.tahunajaran || tahunAjaran),
+              jenis: 'PAS'
             }));
-
-            setGrades(apiGrades);
-            localStorage.setItem(`grades_${tahunAjaran}`, JSON.stringify(apiGrades));
-            setIsLoadingGrades(false);
-            return;
+            combinedGrades.push(...pasGrades);
           }
         }
       } catch (e) {
-        console.warn('API down/cors issue for Grades. Using cached/local data.', e);
+        console.warn('API down/cors issue for PAS Grades.', e);
+      }
+
+      // 2. Fetch PTS grades
+      try {
+        const responsePts = await fetch(`${apiBaseUrl}/api/rapor/pts?tahunajaran=${encodeURIComponent(tahunAjaran)}`);
+        if (responsePts.ok) {
+          const resultPts = await responsePts.json();
+          if (resultPts && resultPts.status === 'sukses' && Array.isArray(resultPts.data)) {
+            hasApiSuccess = true;
+            const ptsGrades: Grade[] = resultPts.data.map((item: any) => ({
+              replid: item.replid ? Number(item.replid) : undefined,
+              nis: String(item.nis),
+              idpelajaran: Number(item.idpelajaran),
+              nipguru: String(item.nipguru || ''),
+              kkm: Number(item.kkm || 75),
+              nilai_ph: item.nilai_ph !== undefined ? Number(item.nilai_ph) : 0,
+              nilai_pts: item.nilai_pts !== undefined ? Number(item.nilai_pts) : 0,
+              nilaiakhir: Number(item.nilaiakhir),
+              nilaihuruf: String(item.nilaihuruf || ''),
+              predikat: String(item.predikat),
+              catatanguru: String(item.catatanguru || ''),
+              tahunajaran: String(item.tahunajaran || tahunAjaran),
+              jenis: 'PTS'
+            }));
+            combinedGrades.push(...ptsGrades);
+          }
+        }
+      } catch (e) {
+        // Fallback gracefully if PTS route is fresh
+      }
+
+      if (hasApiSuccess) {
+        setGrades(combinedGrades);
+        localStorage.setItem(`grades_${tahunAjaran}`, JSON.stringify(combinedGrades));
+        setIsLoadingGrades(false);
+        return;
       }
       
       const cached = localStorage.getItem(`grades_${tahunAjaran}`);
@@ -358,11 +396,15 @@ export default function App() {
       }
     }
 
-    // Find if we already have this grade in state for the current academic year
+    // Find if we already have this grade in state for the current academic year & matching jenis
     const targetTa = newGrade.tahunajaran || tahunAjaran;
+    const isPts = newGrade.jenis === 'PTS';
+    const targetEndpoint = isPts ? 'pts' : 'terpadu';
+
     const existing = grades.find(g => 
-      g.nis === newGrade.nis && 
+      String(g.nis) === String(newGrade.nis) && 
       g.idpelajaran === newGrade.idpelajaran &&
+      (isPts ? g.jenis === 'PTS' : (g.jenis === 'PAS' || !g.jenis)) &&
       (!g.tahunajaran || g.tahunajaran === targetTa)
     );
     const existingReplid = existing?.replid || newGrade.replid;
@@ -370,12 +412,18 @@ export default function App() {
     // Update local state temporarily
     setGrades((prev) => {
       const idx = prev.findIndex(g => 
-        g.nis === newGrade.nis && 
+        String(g.nis) === String(newGrade.nis) && 
         g.idpelajaran === newGrade.idpelajaran &&
+        (isPts ? g.jenis === 'PTS' : (g.jenis === 'PAS' || !g.jenis)) &&
         (!g.tahunajaran || g.tahunajaran === targetTa)
       );
       let updated = [...prev];
-      const gradeWithTa = { ...newGrade, tahunajaran: targetTa, replid: existingReplid };
+      const gradeWithTa: Grade = { 
+        ...newGrade, 
+        tahunajaran: targetTa, 
+        replid: existingReplid,
+        jenis: newGrade.jenis || 'PAS'
+      };
       if (idx !== -1) {
         updated[idx] = gradeWithTa;
       } else {
@@ -388,61 +436,37 @@ export default function App() {
     try {
       const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'https://fastify.nganjuk.net';
       let response;
-      if (existingReplid) {
-        // If there's an existing database record, use PUT: fastify.put('/terpadu/:id')
-        response = await fetch(`${apiBaseUrl}/api/rapor/terpadu/${existingReplid}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            kkm: newGrade.kkm,
-            nilaiakhir: newGrade.nilaiakhir,
-            nilaihuruf: newGrade.nilaihuruf,
-            predikat: newGrade.predikat,
-            catatanguru: newGrade.catatanguru,
-            tahunajaran: targetTa
-          })
-        });
-      } else {
-        // Otherwise, insert via POST: fastify.post('/terpadu')
-        response = await fetch(`${apiBaseUrl}/api/rapor/terpadu`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            nis: newGrade.nis,
-            idpelajaran: newGrade.idpelajaran,
-            nipguru: newGrade.nipguru,
-            kkm: newGrade.kkm,
-            nilaiakhir: newGrade.nilaiakhir,
-            nilaihuruf: newGrade.nilaihuruf,
-            predikat: newGrade.predikat,
-            catatanguru: newGrade.catatanguru,
-            tahunajaran: targetTa
-          })
-        });
+      const payload: any = {
+        nis: newGrade.nis,
+        idpelajaran: newGrade.idpelajaran,
+        nipguru: newGrade.nipguru,
+        kkm: newGrade.kkm,
+        nilaiakhir: newGrade.nilaiakhir,
+        nilaihuruf: newGrade.nilaihuruf,
+        predikat: newGrade.predikat,
+        catatanguru: newGrade.catatanguru,
+        tahunajaran: targetTa
+      };
+
+      if (isPts) {
+        payload.nilai_ph = newGrade.nilai_ph || 0;
+        payload.nilai_pts = newGrade.nilai_pts || 0;
       }
 
-      // Re-trigger loadGradesApi to fetch real-time replids assigned by the database!
-      if (response && response.ok) {
-        const refreshResponse = await fetch(`${apiBaseUrl}/api/rapor/terpadu?tahunajaran=${encodeURIComponent(tahunAjaran)}`);
-        if (refreshResponse.ok) {
-          const result = await refreshResponse.json();
-          if (result && result.status === 'sukses' && Array.isArray(result.data)) {
-            const apiGrades: Grade[] = result.data.map((item: any) => ({
-              replid: item.replid ? Number(item.replid) : undefined,
-              nis: String(item.nis),
-              idpelajaran: Number(item.idpelajaran),
-              nipguru: String(item.nipguru),
-              kkm: Number(item.kkm),
-              nilaiakhir: Number(item.nilaiakhir),
-              nilaihuruf: String(item.nilaihuruf),
-              predikat: String(item.predikat),
-              catatanguru: String(item.catatanguru || ''),
-              tahunajaran: String(item.tahunajaran || tahunAjaran)
-            }));
-            setGrades(apiGrades);
-            localStorage.setItem(`grades_${tahunAjaran}`, JSON.stringify(apiGrades));
-          }
-        }
+      if (existingReplid) {
+        // If there's an existing database record, use PUT
+        response = await fetch(`${apiBaseUrl}/api/rapor/${targetEndpoint}/${existingReplid}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+      } else {
+        // Otherwise, insert via POST
+        response = await fetch(`${apiBaseUrl}/api/rapor/${targetEndpoint}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
       }
     } catch (e) {
       console.warn('API error synchronising grade save', e);
@@ -451,15 +475,17 @@ export default function App() {
 
   const handleDeleteGrade = async (nis: string, idpelajaran: number) => {
     const target = grades.find(g => 
-      g.nis === nis && 
+      String(g.nis) === String(nis) && 
       g.idpelajaran === idpelajaran &&
       (!g.tahunajaran || g.tahunajaran === tahunAjaran)
     );
     const targetReplid = target?.replid;
+    const isPts = target?.jenis === 'PTS';
+    const targetEndpoint = isPts ? 'pts' : 'terpadu';
 
     setGrades((prev) => {
       const filtered = prev.filter(g => 
-        !(g.nis === nis && g.idpelajaran === idpelajaran && (!g.tahunajaran || g.tahunajaran === tahunAjaran))
+        !(String(g.nis) === String(nis) && g.idpelajaran === idpelajaran && (!g.tahunajaran || g.tahunajaran === tahunAjaran))
       );
       localStorage.setItem(`grades_${tahunAjaran}`, JSON.stringify(filtered));
       return filtered;
@@ -467,41 +493,13 @@ export default function App() {
 
     try {
       const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'https://fastify.nganjuk.net';
-      let response;
       if (targetReplid) {
-        response = await fetch(`${apiBaseUrl}/api/rapor/terpadu/${targetReplid}`, {
+        await fetch(`${apiBaseUrl}/api/rapor/${targetEndpoint}/${targetReplid}`, {
           method: 'DELETE'
         });
-      } else {
-        response = await fetch(`${apiBaseUrl}/api/rapor/terpadu?nis=${nis}&idpelajaran=${idpelajaran}&tahunajaran=${encodeURIComponent(tahunAjaran)}`, {
-          method: 'DELETE'
-        });
-      }
-
-      if (response && response.ok) {
-        const refreshResponse = await fetch(`${apiBaseUrl}/api/rapor/terpadu?tahunajaran=${encodeURIComponent(tahunAjaran)}`);
-        if (refreshResponse.ok) {
-          const result = await refreshResponse.json();
-          if (result && result.status === 'sukses' && Array.isArray(result.data)) {
-            const apiGrades: Grade[] = result.data.map((item: any) => ({
-              replid: item.replid ? Number(item.replid) : undefined,
-              nis: String(item.nis),
-              idpelajaran: Number(item.idpelajaran),
-              nipguru: String(item.nipguru),
-              kkm: Number(item.kkm),
-              nilaiakhir: Number(item.nilaiakhir),
-              nilaihuruf: String(item.nilaihuruf),
-              predikat: String(item.predikat),
-              catatanguru: String(item.catatanguru || ''),
-              tahunajaran: String(item.tahunajaran || tahunAjaran)
-            }));
-            setGrades(apiGrades);
-            localStorage.setItem(`grades_${tahunAjaran}`, JSON.stringify(apiGrades));
-          }
-        }
       }
     } catch (e) {
-      console.warn('API error synchronising grade deletion', e);
+      console.warn('API error deleting grade', e);
     }
   };
 

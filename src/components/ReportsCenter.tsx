@@ -38,6 +38,7 @@ export default function ReportsCenter({
 
   // Modal for direct printing of report cards
   const [printModalOpen, setPrintModalOpen] = useState(false);
+  const [printMode, setPrintMode] = useState<'PAS' | 'PTS'>('PAS');
   const [printNis, setPrintNis] = useState('');
   const [printSelectedClass, setPrintSelectedClass] = useState('');
 
@@ -46,6 +47,10 @@ export default function ReportsCenter({
     const params = new URLSearchParams(window.location.search);
     const qNis = params.get('print-nis');
     const qClass = params.get('print-class');
+    const qJenis = params.get('print-jenis') || params.get('jenis');
+    if (qJenis && (qJenis.toUpperCase() === 'PTS' || qJenis.toUpperCase() === 'PAS')) {
+      setPrintMode(qJenis.toUpperCase() as 'PAS' | 'PTS');
+    }
     if (qNis) {
       setPrintNis(qNis);
       if (qClass) {
@@ -72,8 +77,10 @@ export default function ReportsCenter({
   const printUrl = useMemo(() => {
     if (!activePrintStudent) return '#';
     const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'https://fastify.nganjuk.net';
-    return `${apiBaseUrl}/api/rapor/print/terpadu/${activePrintStudent.nis}`;
-  }, [activePrintStudent]);
+    const ta = encodeURIComponent(tahunAjaran || activePrintStudent.tahunajaran || '2025/2026');
+    const endpoint = printMode === 'PTS' ? 'pts' : 'terpadu';
+    return `${apiBaseUrl}/api/rapor/print/${endpoint}/${activePrintStudent.nis}?tahunajaran=${ta}&jenis=${printMode}`;
+  }, [activePrintStudent, printMode, tahunAjaran]);
 
   // 1. Get list of classes and subjects for filtering
   const classesList = useMemo(() => {
@@ -170,8 +177,12 @@ export default function ReportsCenter({
   }, [printableList, printSelectedClass]);
 
   const activePrintGrades = useMemo(() => {
-    return grades.filter(g => g.nis === printNis && (!g.tahunajaran || !tahunAjaran || g.tahunajaran === tahunAjaran));
-  }, [printNis, grades, tahunAjaran]);
+    return grades.filter(g => 
+      String(g.nis) === String(printNis) && 
+      (printMode === 'PTS' ? g.jenis === 'PTS' : (g.jenis === 'PAS' || !g.jenis)) &&
+      (!g.tahunajaran || !tahunAjaran || g.tahunajaran === tahunAjaran)
+    );
+  }, [printNis, grades, tahunAjaran, printMode]);
 
   const activePrintPersonality = useMemo(() => {
     return personalities.find(p => p.nis === printNis);
@@ -568,7 +579,33 @@ export default function ReportsCenter({
               <div className={printNis && activePrintStudent ? 'lg:col-span-4 space-y-4' : 'space-y-4'}>
                 <div>
                   <h3 className="text-base font-extrabold text-slate-800">🖨️ Cetak Lembar Rapor Individu</h3>
-                  <p className="text-xs text-slate-400 mt-0.5">Pilih kelas lalu pilih siswa untuk dicetak</p>
+                  <p className="text-xs text-slate-400 mt-0.5">Pilih mode rapor, kelas, dan siswa</p>
+                </div>
+
+                {/* Mode Selector Pill: PAS vs PTS */}
+                <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
+                  <button
+                    type="button"
+                    onClick={() => setPrintMode('PAS')}
+                    className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer text-center ${
+                      printMode === 'PAS'
+                        ? 'bg-white text-emerald-700 shadow-xs border border-slate-200'
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    📘 PAS (Akhir)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPrintMode('PTS')}
+                    className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer text-center ${
+                      printMode === 'PTS'
+                        ? 'bg-white text-amber-700 shadow-xs border border-slate-200'
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    📙 PTS (Tengah)
+                  </button>
                 </div>
 
                 <div className="space-y-4">
@@ -690,10 +727,10 @@ export default function ReportsCenter({
                       {/* Heading */}
                       <div className="text-center font-bold tracking-normal mb-2 border-b border-slate-200 pb-1">
                         <h1 className="text-xs font-extrabold text-slate-900 uppercase">
-                          RAPOR PENILAIAN SUMATIF AKHIR SEMESTER II
+                          {printMode === 'PTS' ? 'RAPOR PENILAIAN TENGAH SEMESTER (PTS)' : 'RAPOR PENILAIAN SUMATIF AKHIR SEMESTER'}
                         </h1>
                         <h2 className="text-[9.5px] font-bold text-slate-900 uppercase mt-0.5">
-                          TERPADU
+                          {printMode === 'PTS' ? 'LAPORAN HASIL BELAJAR SISIPAN' : 'TERPADU'}
                         </h2>
                         <h3 className="text-[9.5px] font-bold text-slate-900 uppercase mt-0.5">
                           SDI HIDAYATUL ISLAMIYAH
@@ -731,7 +768,7 @@ export default function ReportsCenter({
                           <div className="flex">
                             <span className="w-24 shrink-0 font-medium">Semester</span>
                             <span className="mr-1.5">:</span>
-                            <span className="font-bold">Genap</span>
+                            <span className="font-bold">Ganjil / Genap</span>
                           </div>
                           <div className="flex">
                             <span className="w-24 shrink-0 font-medium">Tahun Pelajaran</span>
@@ -744,49 +781,73 @@ export default function ReportsCenter({
                       {/* Grades Table */}
                       <table className="w-full text-left border-collapse border border-slate-800 text-[9px] text-slate-900">
                         <thead className="bg-[#f8fafc] font-bold text-center">
-                          <tr>
-                            <th className="border border-slate-800 py-0.5 px-1 w-[5%]">NO</th>
-                            <th className="border border-slate-800 py-0.5 px-2 text-left w-[35%]">MATA PELAJARAN</th>
-                            <th className="border border-slate-800 py-0.5 px-1 w-[10%]">KKM</th>
-                            <th className="border border-slate-800 py-0.5 px-1 w-[12%]">
-                              <div>NILAI</div>
-                              <div>ANGKA</div>
-                            </th>
-                            <th className="border border-slate-800 py-0.5 px-2 text-left w-[28%]">NILAI HURUF</th>
-                            <th className="border border-slate-800 py-0.5 px-1 w-[10%]">PREDIKAT</th>
-                          </tr>
+                          {printMode === 'PTS' ? (
+                            <tr>
+                              <th className="border border-slate-800 py-0.5 px-1 w-[5%]">NO</th>
+                              <th className="border border-slate-800 py-0.5 px-2 text-left w-[33%]">MATA PELAJARAN</th>
+                              <th className="border border-slate-800 py-0.5 px-1 w-[8%]">KKM</th>
+                              <th className="border border-slate-800 py-0.5 px-1 w-[12%]">NILAI PH</th>
+                              <th className="border border-slate-800 py-0.5 px-1 w-[12%]">TES PTS</th>
+                              <th className="border border-slate-800 py-0.5 px-1 w-[10%]">AKHIR PTS</th>
+                              <th className="border border-slate-800 py-0.5 px-1 w-[10%]">PREDIKAT</th>
+                            </tr>
+                          ) : (
+                            <tr>
+                              <th className="border border-slate-800 py-0.5 px-1 w-[5%]">NO</th>
+                              <th className="border border-slate-800 py-0.5 px-2 text-left w-[35%]">MATA PELAJARAN</th>
+                              <th className="border border-slate-800 py-0.5 px-1 w-[10%]">KKM</th>
+                              <th className="border border-slate-800 py-0.5 px-1 w-[12%]">
+                                <div>NILAI</div>
+                                <div>ANGKA</div>
+                              </th>
+                              <th className="border border-slate-800 py-0.5 px-2 text-left w-[28%]">NILAI HURUF</th>
+                              <th className="border border-slate-800 py-0.5 px-1 w-[10%]">PREDIKAT</th>
+                            </tr>
+                          )}
                         </thead>
                         <tbody>
                           {activePrintGrades.map((g, idx) => (
-                            <tr key={`${g.idpelajaran}-${idx}`} className="text-center">
-                              <td className="border border-slate-800 py-0.5 px-1 text-center">{idx + 1}</td>
-                              <td className="border border-slate-800 py-0.5 px-2 text-left font-extrabold">{subjectMap[g.idpelajaran] || `ID: ${g.idpelajaran}`}</td>
-                              <td className="border border-slate-800 py-0.5 px-1 text-center">{g.kkm}</td>
-                              <td className="border border-slate-800 py-0.5 px-1 text-center font-bold">{g.nilaiakhir}</td>
-                              <td className="border border-slate-800 py-0.5 px-2 text-left text-[8px] capitalize">{g.nilaihuruf || numberToWords(g.nilaiakhir)}</td>
-                              <td className="border border-slate-800 py-0.5 px-1 text-center font-bold">{g.predikat}</td>
-                            </tr>
+                            printMode === 'PTS' ? (
+                              <tr key={`${g.idpelajaran}-${idx}`} className="text-center">
+                                <td className="border border-slate-800 py-0.5 px-1 text-center">{idx + 1}</td>
+                                <td className="border border-slate-800 py-0.5 px-2 text-left font-extrabold">{subjectMap[g.idpelajaran] || `ID: ${g.idpelajaran}`}</td>
+                                <td className="border border-slate-800 py-0.5 px-1 text-center">{g.kkm}</td>
+                                <td className="border border-slate-800 py-0.5 px-1 text-center font-bold">{g.nilai_ph !== undefined ? g.nilai_ph : '-'}</td>
+                                <td className="border border-slate-800 py-0.5 px-1 text-center font-bold">{g.nilai_pts !== undefined ? g.nilai_pts : '-'}</td>
+                                <td className="border border-slate-800 py-0.5 px-1 text-center font-black text-amber-900">{g.nilaiakhir}</td>
+                                <td className="border border-slate-800 py-0.5 px-1 text-center font-bold">{g.predikat}</td>
+                              </tr>
+                            ) : (
+                              <tr key={`${g.idpelajaran}-${idx}`} className="text-center">
+                                <td className="border border-slate-800 py-0.5 px-1 text-center">{idx + 1}</td>
+                                <td className="border border-slate-800 py-0.5 px-2 text-left font-extrabold">{subjectMap[g.idpelajaran] || `ID: ${g.idpelajaran}`}</td>
+                                <td className="border border-slate-800 py-0.5 px-1 text-center">{g.kkm}</td>
+                                <td className="border border-slate-800 py-0.5 px-1 text-center font-bold">{g.nilaiakhir}</td>
+                                <td className="border border-slate-800 py-0.5 px-2 text-left text-[8px] capitalize">{g.nilaihuruf || numberToWords(g.nilaiakhir)}</td>
+                                <td className="border border-slate-800 py-0.5 px-1 text-center font-bold">{g.predikat}</td>
+                              </tr>
+                            )
                           ))}
                           {activePrintGrades.length === 0 && (
                             <tr>
-                              <td colSpan={6} className="border border-slate-800 py-3 text-center text-slate-400 italic">
-                                Belum ada nilai akademik terdata untuk siswa ini.
+                              <td colSpan={printMode === 'PTS' ? 7 : 6} className="border border-slate-800 py-3 text-center text-slate-400 italic">
+                                Belum ada nilai {printMode} terdata untuk siswa ini.
                               </td>
                             </tr>
                           )}
                           <tr className="bg-slate-50/20 font-bold">
                             <td colSpan={3} className="border border-slate-800 py-0.5 px-2 text-left uppercase text-[9px]">JUMLAH</td>
                             <td className="border border-slate-800 py-0.5 px-1 text-center text-[9px] font-extrabold">{totalNilai}</td>
-                            <td colSpan={2} className="border border-slate-800 py-0.5 px-2"></td>
+                            <td colSpan={printMode === 'PTS' ? 3 : 2} className="border border-slate-800 py-0.5 px-2"></td>
                           </tr>
                           <tr className="bg-slate-50/20 font-bold">
                             <td colSpan={3} className="border border-slate-800 py-0.5 px-2 text-left uppercase text-[9px]">RATA-RATA</td>
                             <td className="border border-slate-800 py-0.5 px-1 text-center text-[9px] font-extrabold">{averageNilaiStr}</td>
-                            <td colSpan={2} className="border border-slate-800 py-0.5 px-2"></td>
+                            <td colSpan={printMode === 'PTS' ? 3 : 2} className="border border-slate-800 py-0.5 px-2"></td>
                           </tr>
                           <tr className="bg-slate-100/50 font-extrabold">
                             <td colSpan={3} className="border border-slate-800 py-0.5 px-2 text-left uppercase text-[9px]">KUALIFIKASI NILAI</td>
-                            <td colSpan={3} className="border border-slate-800 py-0.5 px-2 text-center text-[9px] font-black text-[#407655]">{kualifikasiNilai}</td>
+                            <td colSpan={printMode === 'PTS' ? 4 : 3} className="border border-slate-800 py-0.5 px-2 text-center text-[9px] font-black text-[#407655]">{kualifikasiNilai}</td>
                           </tr>
                         </tbody>
                       </table>
@@ -795,14 +856,16 @@ export default function ReportsCenter({
                       <div className="border border-slate-800 p-1.5 mt-2 min-h-[2.5rem]">
                         <div className="font-bold text-[9px]">Catatan :</div>
                         <div className="italic text-[9px] mt-0.5 text-slate-850 font-medium">
-                          {activePrintPersonality?.catatan || 'perhatikan untuk lebih berdisiplin'}
+                          {activePrintPersonality?.catatan || 'Perhatikan untuk terus mempertahankan dan meningkatkan prestasi belajar.'}
                         </div>
                       </div>
 
-                      {/* Promotion line */}
-                      <div className="mt-1.5 text-[9px]">
-                        <span className="font-extrabold">Naik kelas / <span className="line-through">Tinggal kelas</span></span>
-                      </div>
+                      {/* Promotion line (hanya PAS) */}
+                      {printMode === 'PAS' && (
+                        <div className="mt-1.5 text-[9px]">
+                          <span className="font-extrabold">Naik kelas / <span className="line-through">Tinggal kelas</span></span>
+                        </div>
+                      )}
 
                       {/* Double charts box */}
                       <div className="flex justify-between items-stretch gap-4 mt-2">

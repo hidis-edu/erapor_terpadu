@@ -27,6 +27,9 @@ export default function DashboardOverview({
   
   // 1. Calculate General Metrics
   const totalGrades = grades.length;
+  const totalPasGrades = grades.filter(g => g.jenis === 'PAS' || !g.jenis).length;
+  const totalPtsGrades = grades.filter(g => g.jenis === 'PTS').length;
+
   const averageGrade = totalGrades > 0 
     ? Math.round(grades.reduce((sum, g) => sum + g.nilaiakhir, 0) / totalGrades) 
     : 0;
@@ -121,7 +124,7 @@ export default function DashboardOverview({
       {/* Grid of Metric Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { title: 'Total Nilai Diinput', value: totalGrades, icon: BookOpen, color: 'text-blue-600 bg-blue-50 border-blue-100', desc: 'Jumlah nilai rapor masuk' },
+          { title: 'Total Nilai Diinput', value: totalGrades, icon: BookOpen, color: 'text-blue-600 bg-blue-50 border-blue-100', desc: `${totalPasGrades} PAS • ${totalPtsGrades} PTS` },
           { title: 'Rata-rata Nilai', value: `${averageGrade}`, icon: TrendingUp, color: 'text-emerald-600 bg-emerald-50 border-emerald-100', desc: 'Rata-rata seluruh mapel' },
           { title: 'Persentase Kelulusan', value: `${passingRate}%`, icon: Star, color: 'text-amber-600 bg-amber-50 border-amber-100', desc: `Nilai siswa di atas KKM` },
           { title: 'Penilaian Sikap', value: totalSikap, icon: Users, color: 'text-rose-600 bg-rose-50 border-rose-100', desc: 'Siswa dengan rekap kepribadian' },

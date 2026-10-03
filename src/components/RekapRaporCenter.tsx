@@ -21,6 +21,7 @@ export default function RekapRaporCenter({
   activeTahunAjaran,
   addToast
 }: RekapRaporCenterProps) {
+  const [modeRekap, setModeRekap] = useState<'PAS' | 'PTS'>('PAS');
   const [selectedClass, setSelectedClass] = useState('');
   const [selectedNis, setSelectedNis] = useState('');
   const [idSemester, setIdSemester] = useState<number>(34); // Default is 34 (Semester Ganjil)
@@ -52,21 +53,36 @@ export default function RekapRaporCenter({
     const className = student ? student.kelas : item.idkelas || '-';
     const formattedRerata = Number(item.rata_rata).toFixed(2);
     
-    const textMsg = `Assalamualaikum Wr. Wb.\n\n` +
-      `Berikut kami sampaikan *Laporan Ringkas Hasil Belajar (E-Rapor)* untuk putra/putri Bapak/Ibu:\n\n` +
-      `📌 *Nama Siswa:* ${studentName}\n` +
-      `📌 *NIS:* ${item.nis}\n` +
-      `🏫 *Kelas:* Kelas ${className} (${item.tahunajaran})\n` +
-      `📅 *Semester:* ${item.idsemester === 34 ? '1 (Ganjil)' : '2 (Genap)'}\n\n` +
-      `*Ringkasan Nilai & Sikap:*\n` +
-      `📚 *Jumlah Mapel:* ${item.jumlah_mapel}\n` +
-      `📈 *Total Nilai:* ${item.total_nilai}\n` +
-      `📊 *Nilai Rata-Rata:* ${formattedRerata}\n` +
-      `🙏 *Sikap Ibadah:* ${item.ibadah || 'B'}\n` +
-      `🤝 *Sikap Akhlak:* ${item.akhlak || 'B'}\n` +
-      `⏱️ *Disiplin:* ${item.disiplin || 'B'}\n\n` +
-      `Semoga hasil ringkasan ini dapat memotivasi belajar siswa ke depan. Terima kasih.\n\n` +
-      `-- *SD Islam Hidayatul Islamiyah* --`;
+    const isModePts = modeRekap === 'PTS';
+    const textMsg = isModePts
+      ? `Assalamualaikum Wr. Wb.\n\n` +
+        `Berikut kami sampaikan *Laporan Hasil Belajar Penilaian Tengah Semester (PTS)* untuk ananda:\n\n` +
+        `📌 *Nama Siswa:* ${studentName}\n` +
+        `📌 *NIS:* ${item.nis}\n` +
+        `🏫 *Kelas:* Kelas ${className} (${item.tahunajaran})\n` +
+        `📅 *Semester:* ${item.idsemester === 34 ? '1 (Ganjil - PTS)' : '2 (Genap - PTS)'}\n\n` +
+        `*Ringkasan Nilai PTS:*\n` +
+        `📚 *Jumlah Mapel:* ${item.jumlah_mapel}\n` +
+        `📈 *Total Nilai:* ${item.total_nilai}\n` +
+        `📊 *Nilai Rata-Rata PTS:* ${formattedRerata}\n` +
+        `🏥 *Absensi:* Sakit: ${item.sakit || 0} hr, Izin: ${item.izin || 0} hr, Alpa: ${item.alpa || 0} hr\n\n` +
+        `Semoga hasil evaluasi tengah semester ini menjadi pemacu semangat belajar siswa. Terima kasih.\n\n` +
+        `-- *SD Islam Hidayatul Islamiyah* --`
+      : `Assalamualaikum Wr. Wb.\n\n` +
+        `Berikut kami sampaikan *Laporan Ringkas Hasil Belajar (E-Rapor Akhir Semester)* untuk putra/putri Bapak/Ibu:\n\n` +
+        `📌 *Nama Siswa:* ${studentName}\n` +
+        `📌 *NIS:* ${item.nis}\n` +
+        `🏫 *Kelas:* Kelas ${className} (${item.tahunajaran})\n` +
+        `📅 *Semester:* ${item.idsemester === 34 ? '1 (Ganjil)' : '2 (Genap)'}\n\n` +
+        `*Ringkasan Nilai & Sikap:*\n` +
+        `📚 *Jumlah Mapel:* ${item.jumlah_mapel}\n` +
+        `📈 *Total Nilai:* ${item.total_nilai}\n` +
+        `📊 *Nilai Rata-Rata:* ${formattedRerata}\n` +
+        `🙏 *Sikap Ibadah:* ${item.ibadah || 'B'}\n` +
+        `🤝 *Sikap Akhlak:* ${item.akhlak || 'B'}\n` +
+        `⏱️ *Disiplin:* ${item.disiplin || 'B'}\n\n` +
+        `Semoga hasil ringkasan ini dapat memotivasi belajar siswa ke depan. Terima kasih.\n\n` +
+        `-- *SD Islam Hidayatul Islamiyah* --`;
     setCustomMessage(textMsg);
   };
 
@@ -94,21 +110,23 @@ export default function RekapRaporCenter({
     }
   };
 
-  // 1. Fetch all Rekap Rapor from backend on mounting & on demand
-  const fetchAllRekaps = async (silent = false, customTa?: string) => {
+  // 1. Fetch all Rekap Rapor from backend on mounting & on demand (PAS or PTS)
+  const fetchAllRekaps = async (silent = false, customTa?: string, targetMode?: 'PAS' | 'PTS') => {
     if (!silent) setIsLoadingRekaps(true);
+    const activeMode = targetMode || modeRekap;
     const targetTa = customTa !== undefined ? customTa : activeTahunAjaran;
+    const endpoint = activeMode === 'PTS' ? 'pts/rekap' : 'rekap';
     try {
       const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'https://fastify.nganjuk.net';
       const url = targetTa
-        ? `${apiBaseUrl}/api/rapor/rekap?tahunajaran=${encodeURIComponent(targetTa)}`
-        : `${apiBaseUrl}/api/rapor/rekap`;
+        ? `${apiBaseUrl}/api/rapor/${endpoint}?tahunajaran=${encodeURIComponent(targetTa)}`
+        : `${apiBaseUrl}/api/rapor/${endpoint}`;
       const response = await fetch(url);
       if (response.ok) {
         const result = await response.json();
-        if (result && result.status === 'sukses' && Array.isArray(result.data)) {
+        if (result && (result.status === 'sukses' || result.data) && Array.isArray(result.data)) {
           setRekapsList(result.data);
-          localStorage.setItem(`rekap_rapor_list_${targetTa || 'all'}`, JSON.stringify(result.data));
+          localStorage.setItem(`rekap_rapor_list_${activeMode}_${targetTa || 'all'}`, JSON.stringify(result.data));
         } else {
           setRekapsList([]);
         }
@@ -118,7 +136,7 @@ export default function RekapRaporCenter({
       }
     } catch (e) {
       console.warn('API error loading Rekaps, reading fallback cache', e);
-      const cached = localStorage.getItem(`rekap_rapor_list_${targetTa || 'all'}`);
+      const cached = localStorage.getItem(`rekap_rapor_list_${activeMode}_${targetTa || 'all'}`);
       if (cached) {
         try {
           setRekapsList(JSON.parse(cached));
@@ -134,8 +152,8 @@ export default function RekapRaporCenter({
   };
 
   useEffect(() => {
-    fetchAllRekaps(false, activeTahunAjaran);
-  }, [activeTahunAjaran]);
+    fetchAllRekaps(false, activeTahunAjaran, modeRekap);
+  }, [activeTahunAjaran, modeRekap]);
 
   // 2. Extract comprehensive classes for student generation dropdown & filter (all 6 grades)
   useEffect(() => {
@@ -212,21 +230,23 @@ export default function RekapRaporCenter({
     }
     
     setIsGenerating(true);
+    const endpoint = modeRekap === 'PTS' ? 'pts/rekap/generate' : 'rekap/generate';
     try {
       const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'https://fastify.nganjuk.net';
-      const response = await fetch(`${apiBaseUrl}/api/rapor/rekap/generate`, {
+      const response = await fetch(`${apiBaseUrl}/api/rapor/${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           nis: selectedNis,
           idsemester: idSemester,
-          tahunajaran: tahunAjaran || activeTahunAjaran || '2025/2026'
+          tahunajaran: tahunAjaran || activeTahunAjaran || '2025/2026',
+          catatan_walikelas: ''
         })
       });
 
       if (response.ok) {
         const result = await response.json();
-        addToast(`✔️ Rekap Rapor berhasil di-generate! (Rata-rata: ${result.data?.rata_rata})`, 'success');
+        addToast(`✔️ Rekap Rapor ${modeRekap} berhasil di-generate! (Rata-rata: ${result.data?.rata_rata})`, 'success');
         // Refresh rekap logs table
         await fetchAllRekaps(true);
         // Clear selection to permit quick subsequent builds
@@ -246,14 +266,15 @@ export default function RekapRaporCenter({
 
   const executeDeleteRekap = async (replid: number) => {
     setIsDeletingId(replid);
+    const endpoint = modeRekap === 'PTS' ? 'pts/rekap' : 'rekap';
     try {
       const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'https://fastify.nganjuk.net';
-      const response = await fetch(`${apiBaseUrl}/api/rapor/rekap/${replid}`, {
+      const response = await fetch(`${apiBaseUrl}/api/rapor/${endpoint}/${replid}`, {
         method: 'DELETE'
       });
 
       if (response.ok) {
-        addToast(`✔️ Rekap Rapor berhasil dihapus!`, 'success');
+        addToast(`✔️ Rekap Rapor ${modeRekap} berhasil dihapus!`, 'success');
         setRekapsList(prev => prev.filter(item => item.replid !== replid));
         setConfirmDeleteId(null);
         await fetchAllRekaps(true);
@@ -464,16 +485,49 @@ export default function RekapRaporCenter({
           <div>
             <h3 className="font-black text-slate-800 text-base flex items-center gap-2 flex-wrap">
               <span>🏅 Arsip Hasil Rekapan Rapor</span>
+              <span className={`text-[11px] font-extrabold px-2.5 py-0.5 rounded-full uppercase tracking-wider ${
+                modeRekap === 'PTS' ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'
+              }`}>
+                {modeRekap === 'PTS' ? 'PTS (Tengah Semester)' : 'PAS (Akhir Semester)'}
+              </span>
               {activeTahunAjaran && (
-                <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200">
-                  ({activeTahunAjaran})
+                <span className="text-xs font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-lg border border-slate-200">
+                  {activeTahunAjaran}
                 </span>
               )}
             </h3>
-            <p className="text-[11px] text-slate-400">Database rekaprapor hasil kalkulasi aggregate akhir</p>
+            <p className="text-[11px] text-slate-400">
+              Database rekapitulasi nilai terpadu {modeRekap === 'PTS' ? 'tengah semester (PTS)' : 'akhir semester (PAS)'}
+            </p>
           </div>
           
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2.5 flex-wrap">
+            {/* Mode Switcher Pill */}
+            <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
+              <button
+                type="button"
+                onClick={() => setModeRekap('PAS')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  modeRekap === 'PAS'
+                    ? 'bg-white text-emerald-700 shadow-xs border border-slate-200'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                📘 PAS
+              </button>
+              <button
+                type="button"
+                onClick={() => setModeRekap('PTS')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  modeRekap === 'PTS'
+                    ? 'bg-white text-amber-700 shadow-xs border border-slate-200'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                📙 PTS
+              </button>
+            </div>
+
             <button
               onClick={() => fetchAllRekaps(false)}
               disabled={isLoadingRekaps}
@@ -484,8 +538,12 @@ export default function RekapRaporCenter({
               <span className="text-xs font-bold hidden sm:inline">Segarkan</span>
             </button>
             {rekapsList.length > 0 && (
-              <span className="bg-emerald-55 bg-emerald-50 text-emerald-800 text-xs font-black min-h-10 px-3 py-1.5 rounded-xl flex items-center border border-emerald-100 select-none">
-                {rekapsList.length} Rekap
+              <span className={`text-xs font-black min-h-10 px-3 py-1.5 rounded-xl flex items-center border select-none ${
+                modeRekap === 'PTS' 
+                  ? 'bg-amber-50 text-amber-800 border-amber-200' 
+                  : 'bg-emerald-50 text-emerald-800 border-emerald-100'
+              }`}>
+                {rekapsList.length} Rekap {modeRekap}
               </span>
             )}
           </div>
@@ -531,9 +589,13 @@ export default function RekapRaporCenter({
                   <th className="py-3 px-4 w-[22%] text-slate-700">Nama Siswa</th>
                   <th className="py-3 px-3 text-center w-[11%] text-slate-700">Kelas / Sem</th>
                   <th className="py-3 px-3 text-center w-[11%] text-slate-700">Jml Mapel</th>
-                  <th className="py-3 px-3 text-center w-[13%] text-slate-700">Agregat Nilai</th>
-                  <th className="py-3 px-3 text-center w-[18%] text-slate-700">Sikap (Ibd / Akh / Dis)</th>
-                  <th className="py-3 px-3 text-right w-[16%] text-slate-700">Terakhir Update</th>
+                  <th className="py-3 px-3 text-center w-[14%] text-slate-700">
+                    {modeRekap === 'PTS' ? 'Rata-rata PTS' : 'Agregat Nilai'}
+                  </th>
+                  <th className="py-3 px-3 text-center w-[18%] text-slate-700">
+                    {modeRekap === 'PTS' ? 'Absensi (S / I / A)' : 'Sikap (Ibd / Akh / Dis)'}
+                  </th>
+                  <th className="py-3 px-3 text-right w-[15%] text-slate-700">Terakhir Update</th>
                   <th className="py-3 px-3 text-center w-[9%] text-slate-700">Aksi</th>
                 </tr>
               </thead>
@@ -557,24 +619,43 @@ export default function RekapRaporCenter({
                         {item.jumlah_mapel}
                       </td>
                       <td className="py-3.5 px-3 text-center font-bold">
-                        <div className="text-slate-850 font-mono text-sm">{item.total_nilai}</div>
-                        <div className="text-[10px] text-emerald-600 font-extrabold mt-0.5">Rerata: {Number(item.rata_rata).toFixed(2)}</div>
+                        {modeRekap === 'PTS' ? (
+                          <div className="inline-block bg-amber-50 text-amber-850 px-2.5 py-1 rounded-lg border border-amber-200">
+                            <span className="text-xs font-black">Rerata: {Number(item.rata_rata).toFixed(2)}</span>
+                            <div className="text-[9px] text-amber-700">Total: {item.total_nilai}</div>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="text-slate-850 font-mono text-sm">{item.total_nilai}</div>
+                            <div className="text-[10px] text-emerald-600 font-extrabold mt-0.5">Rerata: {Number(item.rata_rata).toFixed(2)}</div>
+                          </>
+                        )}
                       </td>
-                      <td className="py-3.5 px-3">
-                        <div className="flex gap-1 justify-center">
-                          {['ibadah', 'akhlak', 'disiplin'].map((key) => {
-                            const val = (item as any)[key] || 'B';
-                            return (
-                              <div
-                                key={key}
-                                className={`px-1.5 py-0.5 rounded text-[10px] font-black border text-center ${getScoreColor(val)}`}
-                                title={`${key.toUpperCase()}: ${val}`}
-                              >
-                                {val}
-                              </div>
-                            );
-                          })}
-                        </div>
+                      <td className="py-3.5 px-3 text-center">
+                        {modeRekap === 'PTS' ? (
+                          <div className="inline-flex items-center gap-1.5 bg-slate-50 px-2 py-1 rounded-lg border border-slate-200 text-[11px] font-bold text-slate-700">
+                            <span className="text-amber-700" title="Sakit">S: {item.sakit || 0}</span>
+                            <span>•</span>
+                            <span className="text-blue-700" title="Izin">I: {item.izin || 0}</span>
+                            <span>•</span>
+                            <span className="text-rose-700" title="Alpa">A: {item.alpa || 0}</span>
+                          </div>
+                        ) : (
+                          <div className="flex gap-1 justify-center">
+                            {['ibadah', 'akhlak', 'disiplin'].map((key) => {
+                              const val = (item as any)[key] || 'B';
+                              return (
+                                <div
+                                  key={key}
+                                  className={`px-1.5 py-0.5 rounded text-[10px] font-black border text-center ${getScoreColor(val)}`}
+                                  title={`${key.toUpperCase()}: ${val}`}
+                                >
+                                  {val}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
                       </td>
                       <td className="py-3.5 px-3 text-right font-mono text-[10px] text-slate-400 font-semibold leading-relaxed">
                         {item.last_update ? (
@@ -619,11 +700,15 @@ export default function RekapRaporCenter({
                           ) : (
                             <div className="flex items-center justify-center gap-1">
                               <a
-                                href={`${import.meta.env.VITE_API_BASE_URL || 'https://fastify.nganjuk.net'}/api/rapor/print/terpadu/${item.nis}`}
+                                href={`${import.meta.env.VITE_API_BASE_URL || 'https://fastify.nganjuk.net'}/api/rapor/print/${modeRekap === 'PTS' ? 'pts' : 'terpadu'}/${item.nis}?tahunajaran=${encodeURIComponent(item.tahunajaran || activeTahunAjaran || '2025/2026')}&jenis=${modeRekap}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="p-1.5 text-[#325c42] hover:text-[#254632] hover:bg-emerald-50 rounded-lg transition-all inline-flex items-center justify-center cursor-pointer"
-                                title="Cetak/Print Rapor Siswa Langsung (PDF)"
+                                className={`p-1.5 rounded-lg transition-all inline-flex items-center justify-center cursor-pointer ${
+                                  modeRekap === 'PTS'
+                                    ? 'text-amber-700 hover:text-amber-900 hover:bg-amber-100/70'
+                                    : 'text-[#325c42] hover:text-[#254632] hover:bg-emerald-50'
+                                }`}
+                                title={`Cetak/Print Rapor ${modeRekap} Siswa Langsung (PDF)`}
                               >
                                 <Printer className="w-4 h-4" />
                               </a>
