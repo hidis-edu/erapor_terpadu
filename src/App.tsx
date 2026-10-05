@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { Grade, Personality, Student, Subject, Teacher, Attendance } from './types';
 import { 
-  DEFAULT_SUBJECTS, FALLBACK_STUDENTS, INITIAL_GRADES, INITIAL_PERSONALITIES 
+  DEFAULT_SUBJECTS, FALLBACK_STUDENTS, INITIAL_GRADES, INITIAL_PERSONALITIES, numberToWords 
 } from './data';
 import LoginScreen from './components/LoginScreen';
 import DashboardOverview from './components/DashboardOverview';
@@ -192,19 +192,27 @@ export default function App() {
           const result = await response.json();
           if (result && result.status === 'sukses' && Array.isArray(result.data)) {
             hasApiSuccess = true;
-            const pasGrades: Grade[] = result.data.map((item: any) => ({
-              replid: item.replid ? Number(item.replid) : undefined,
-              nis: String(item.nis),
-              idpelajaran: Number(item.idpelajaran),
-              nipguru: String(item.nipguru),
-              kkm: Number(item.kkm),
-              nilaiakhir: Number(item.nilaiakhir),
-              nilaihuruf: String(item.nilaihuruf),
-              predikat: String(item.predikat),
-              catatanguru: String(item.catatanguru || ''),
-              tahunajaran: String(item.tahunajaran || tahunAjaran),
-              jenis: 'PAS'
-            }));
+            const pasGrades: Grade[] = result.data.map((item: any) => {
+              const akhirVal = Number(item.nilaiakhir || 0);
+              const rawHuruf = String(item.nilaihuruf || '').trim();
+              const fullHuruf = (rawHuruf.length > 5 && !/^\d+(\.\d+)?$/.test(rawHuruf) && rawHuruf.toLowerCase() !== 'nan')
+                ? rawHuruf
+                : numberToWords(akhirVal);
+
+              return {
+                replid: item.replid ? Number(item.replid) : undefined,
+                nis: String(item.nis),
+                idpelajaran: Number(item.idpelajaran),
+                nipguru: String(item.nipguru),
+                kkm: Number(item.kkm),
+                nilaiakhir: akhirVal,
+                nilaihuruf: fullHuruf,
+                predikat: String(item.predikat),
+                catatanguru: String(item.catatanguru || ''),
+                tahunajaran: String(item.tahunajaran || tahunAjaran),
+                jenis: 'PAS'
+              };
+            });
             combinedGrades.push(...pasGrades);
           }
         }
@@ -219,21 +227,29 @@ export default function App() {
           const resultPts = await responsePts.json();
           if (resultPts && resultPts.status === 'sukses' && Array.isArray(resultPts.data)) {
             hasApiSuccess = true;
-            const ptsGrades: Grade[] = resultPts.data.map((item: any) => ({
-              replid: item.replid ? Number(item.replid) : undefined,
-              nis: String(item.nis),
-              idpelajaran: Number(item.idpelajaran),
-              nipguru: String(item.nipguru || ''),
-              kkm: Number(item.kkm || 75),
-              nilai_ph: item.nilai_ph !== undefined ? Number(item.nilai_ph) : 0,
-              nilai_pts: item.nilai_pts !== undefined ? Number(item.nilai_pts) : 0,
-              nilaiakhir: Number(item.nilaiakhir),
-              nilaihuruf: String(item.nilaihuruf || ''),
-              predikat: String(item.predikat),
-              catatanguru: String(item.catatanguru || ''),
-              tahunajaran: String(item.tahunajaran || tahunAjaran),
-              jenis: 'PTS'
-            }));
+            const ptsGrades: Grade[] = resultPts.data.map((item: any) => {
+              const akhirVal = Number(item.nilaiakhir || 0);
+              const rawHuruf = String(item.nilaihuruf || '').trim();
+              const fullHuruf = (rawHuruf.length > 5 && !/^\d+(\.\d+)?$/.test(rawHuruf) && rawHuruf.toLowerCase() !== 'nan')
+                ? rawHuruf
+                : numberToWords(akhirVal);
+
+              return {
+                replid: item.replid ? Number(item.replid) : undefined,
+                nis: String(item.nis),
+                idpelajaran: Number(item.idpelajaran),
+                nipguru: String(item.nipguru || ''),
+                kkm: Number(item.kkm || 75),
+                nilai_ph: item.nilai_ph !== undefined ? Number(item.nilai_ph) : 0,
+                nilai_pts: item.nilai_pts !== undefined ? Number(item.nilai_pts) : 0,
+                nilaiakhir: akhirVal,
+                nilaihuruf: fullHuruf,
+                predikat: String(item.predikat),
+                catatanguru: String(item.catatanguru || ''),
+                tahunajaran: String(item.tahunajaran || tahunAjaran),
+                jenis: 'PTS'
+              };
+            });
             combinedGrades.push(...ptsGrades);
           }
         }
