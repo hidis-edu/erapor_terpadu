@@ -1068,10 +1068,12 @@ export default function ReportsCenter({
                         </div>
                       </div>
 
-                      {/* Promotion line */}
-                      <div className="mt-1.5 text-[9px]">
-                        <span className="font-extrabold">Naik kelas / <span className="line-through">Tinggal kelas</span></span>
-                      </div>
+                      {/* Promotion line (Hanya untuk PAS Akhir Tahun, dihilangkan untuk PTS) */}
+                      {printMode !== 'PTS' && (
+                        <div className="mt-1.5 text-[9px]">
+                          <span className="font-extrabold">Naik kelas / <span className="line-through">Tinggal kelas</span></span>
+                        </div>
+                      )}
 
                       {/* Double charts box */}
                       <div className="flex justify-between items-stretch gap-4 mt-2">
@@ -1326,10 +1328,12 @@ export default function ReportsCenter({
                 </div>
               </div>
 
-              {/* Promotion status */}
-              <div className="mt-1.5 font-bold text-[9.5px]">
-                Naik kelas / <span className="line-through">Tinggal kelas</span>
-              </div>
+              {/* Promotion status (Hanya untuk PAS Akhir Tahun, dihilangkan untuk PTS) */}
+              {printMode !== 'PTS' && (
+                <div className="mt-1.5 font-bold text-[9.5px]">
+                  Naik kelas / <span className="line-through">Tinggal kelas</span>
+                </div>
+              )}
 
               {/* Double charts container */}
               <div className="flex justify-between items-stretch gap-3 mt-1.5">
