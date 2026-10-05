@@ -843,7 +843,7 @@ export default function ReportsCenter({
                           {printMode === 'PTS' ? 'RAPOR PENILAIAN TENGAH SEMESTER (PTS)' : 'RAPOR PENILAIAN SUMATIF AKHIR SEMESTER'}
                         </h1>
                         <h2 className="text-[9.5px] font-bold text-slate-900 uppercase mt-0.5">
-                          {printMode === 'PTS' ? 'LAPORAN HASIL BELAJAR SISIPAN' : 'TERPADU'}
+                          TERPADU
                         </h2>
                         <h3 className="text-[9.5px] font-bold text-slate-900 uppercase mt-0.5">
                           SDI HIDAYATUL ISLAMIYAH
@@ -891,59 +891,35 @@ export default function ReportsCenter({
                         </div>
                       </div>
 
-                      {/* Grades Table */}
+                      {/* Grades Table (SAMA PERSIS PTS & PAS) */}
                       <table className="w-full text-left border-collapse border border-slate-800 text-[9px] text-slate-900">
                         <thead className="bg-[#f8fafc] font-bold text-center">
-                          {printMode === 'PTS' ? (
-                            <tr>
-                              <th className="border border-slate-800 py-0.5 px-1 w-[5%]">NO</th>
-                              <th className="border border-slate-800 py-0.5 px-2 text-left w-[33%]">MATA PELAJARAN</th>
-                              <th className="border border-slate-800 py-0.5 px-1 w-[8%]">KKM</th>
-                              <th className="border border-slate-800 py-0.5 px-1 w-[12%]">NILAI PH</th>
-                              <th className="border border-slate-800 py-0.5 px-1 w-[12%]">TES PTS</th>
-                              <th className="border border-slate-800 py-0.5 px-1 w-[10%]">AKHIR PTS</th>
-                              <th className="border border-slate-800 py-0.5 px-1 w-[10%]">PREDIKAT</th>
-                            </tr>
-                          ) : (
-                            <tr>
-                              <th className="border border-slate-800 py-0.5 px-1 w-[5%]">NO</th>
-                              <th className="border border-slate-800 py-0.5 px-2 text-left w-[35%]">MATA PELAJARAN</th>
-                              <th className="border border-slate-800 py-0.5 px-1 w-[10%]">KKM</th>
-                              <th className="border border-slate-800 py-0.5 px-1 w-[12%]">
-                                <div>NILAI</div>
-                                <div>ANGKA</div>
-                              </th>
-                              <th className="border border-slate-800 py-0.5 px-2 text-left w-[28%]">NILAI HURUF</th>
-                              <th className="border border-slate-800 py-0.5 px-1 w-[10%]">PREDIKAT</th>
-                            </tr>
-                          )}
+                          <tr>
+                            <th className="border border-slate-800 py-0.5 px-1 w-[5%]">NO</th>
+                            <th className="border border-slate-800 py-0.5 px-2 text-left w-[35%]">MATA PELAJARAN</th>
+                            <th className="border border-slate-800 py-0.5 px-1 w-[10%]">KKM</th>
+                            <th className="border border-slate-800 py-0.5 px-1 w-[12%]">
+                              <div>NILAI</div>
+                              <div>ANGKA</div>
+                            </th>
+                            <th className="border border-slate-800 py-0.5 px-2 text-left w-[28%]">NILAI HURUF</th>
+                            <th className="border border-slate-800 py-0.5 px-1 w-[10%]">PREDIKAT</th>
+                          </tr>
                         </thead>
                         <tbody>
                           {activePrintGrades.map((g, idx) => (
-                            printMode === 'PTS' ? (
-                              <tr key={`${g.idpelajaran}-${idx}`} className="text-center">
-                                <td className="border border-slate-800 py-0.5 px-1 text-center">{idx + 1}</td>
-                                <td className="border border-slate-800 py-0.5 px-2 text-left font-extrabold">{subjectMap[g.idpelajaran] || `ID: ${g.idpelajaran}`}</td>
-                                <td className="border border-slate-800 py-0.5 px-1 text-center">{g.kkm}</td>
-                                <td className="border border-slate-800 py-0.5 px-1 text-center font-bold">{g.nilai_ph !== undefined ? g.nilai_ph : '-'}</td>
-                                <td className="border border-slate-800 py-0.5 px-1 text-center font-bold">{g.nilai_pts !== undefined ? g.nilai_pts : '-'}</td>
-                                <td className="border border-slate-800 py-0.5 px-1 text-center font-black text-amber-900">{g.nilaiakhir}</td>
-                                <td className="border border-slate-800 py-0.5 px-1 text-center font-bold">{g.predikat}</td>
-                              </tr>
-                            ) : (
-                              <tr key={`${g.idpelajaran}-${idx}`} className="text-center">
-                                <td className="border border-slate-800 py-0.5 px-1 text-center">{idx + 1}</td>
-                                <td className="border border-slate-800 py-0.5 px-2 text-left font-extrabold">{subjectMap[g.idpelajaran] || `ID: ${g.idpelajaran}`}</td>
-                                <td className="border border-slate-800 py-0.5 px-1 text-center">{g.kkm}</td>
-                                <td className="border border-slate-800 py-0.5 px-1 text-center font-bold">{g.nilaiakhir}</td>
-                                <td className="border border-slate-800 py-0.5 px-2 text-left text-[8px] capitalize">{g.nilaihuruf || numberToWords(g.nilaiakhir)}</td>
-                                <td className="border border-slate-800 py-0.5 px-1 text-center font-bold">{g.predikat}</td>
-                              </tr>
-                            )
+                            <tr key={`${g.idpelajaran}-${idx}`} className="text-center">
+                              <td className="border border-slate-800 py-0.5 px-1 text-center">{idx + 1}</td>
+                              <td className="border border-slate-800 py-0.5 px-2 text-left font-extrabold">{subjectMap[g.idpelajaran] || `ID: ${g.idpelajaran}`}</td>
+                              <td className="border border-slate-800 py-0.5 px-1 text-center">{g.kkm || 75}</td>
+                              <td className="border border-slate-800 py-0.5 px-1 text-center font-bold">{g.nilaiakhir}</td>
+                              <td className="border border-slate-800 py-0.5 px-2 text-left text-[8px] capitalize">{g.nilaihuruf || numberToWords(g.nilaiakhir)}</td>
+                              <td className="border border-slate-800 py-0.5 px-1 text-center font-bold">{g.predikat || 'B'}</td>
+                            </tr>
                           ))}
                           {activePrintGrades.length === 0 && (
                             <tr>
-                              <td colSpan={printMode === 'PTS' ? 7 : 6} className="border border-slate-800 py-3 text-center text-slate-400 italic">
+                              <td colSpan={6} className="border border-slate-800 py-3 text-center text-slate-400 italic">
                                 Belum ada nilai {printMode} terdata untuk siswa ini.
                               </td>
                             </tr>
@@ -951,16 +927,16 @@ export default function ReportsCenter({
                           <tr className="bg-slate-50/20 font-bold">
                             <td colSpan={3} className="border border-slate-800 py-0.5 px-2 text-left uppercase text-[9px]">JUMLAH</td>
                             <td className="border border-slate-800 py-0.5 px-1 text-center text-[9px] font-extrabold">{totalNilai}</td>
-                            <td colSpan={printMode === 'PTS' ? 3 : 2} className="border border-slate-800 py-0.5 px-2"></td>
+                            <td colSpan={2} className="border border-slate-800 py-0.5 px-2"></td>
                           </tr>
                           <tr className="bg-slate-50/20 font-bold">
                             <td colSpan={3} className="border border-slate-800 py-0.5 px-2 text-left uppercase text-[9px]">RATA-RATA</td>
                             <td className="border border-slate-800 py-0.5 px-1 text-center text-[9px] font-extrabold">{averageNilaiStr}</td>
-                            <td colSpan={printMode === 'PTS' ? 3 : 2} className="border border-slate-800 py-0.5 px-2"></td>
+                            <td colSpan={2} className="border border-slate-800 py-0.5 px-2"></td>
                           </tr>
                           <tr className="bg-slate-100/50 font-extrabold">
                             <td colSpan={3} className="border border-slate-800 py-0.5 px-2 text-left uppercase text-[9px]">KUALIFIKASI NILAI</td>
-                            <td colSpan={printMode === 'PTS' ? 4 : 3} className="border border-slate-800 py-0.5 px-2 text-center text-[9px] font-black text-[#407655]">{kualifikasiNilai}</td>
+                            <td colSpan={3} className="border border-slate-800 py-0.5 px-2 text-center text-[9px] font-black text-[#407655]">{kualifikasiNilai}</td>
                           </tr>
                         </tbody>
                       </table>
@@ -973,12 +949,10 @@ export default function ReportsCenter({
                         </div>
                       </div>
 
-                      {/* Promotion line (hanya PAS) */}
-                      {printMode === 'PAS' && (
-                        <div className="mt-1.5 text-[9px]">
-                          <span className="font-extrabold">Naik kelas / <span className="line-through">Tinggal kelas</span></span>
-                        </div>
-                      )}
+                      {/* Promotion line */}
+                      <div className="mt-1.5 text-[9px]">
+                        <span className="font-extrabold">Naik kelas / <span className="line-through">Tinggal kelas</span></span>
+                      </div>
 
                       {/* Double charts box */}
                       <div className="flex justify-between items-stretch gap-4 mt-2">
