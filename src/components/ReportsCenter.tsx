@@ -42,6 +42,48 @@ export default function ReportsCenter({
   const [printNis, setPrintNis] = useState('');
   const [printSelectedClass, setPrintSelectedClass] = useState('');
 
+  // Custom Print Date Toggle & Controls
+  const [useCustomPrintDate, setUseCustomPrintDate] = useState(false);
+  const [customPrintDate, setCustomPrintDate] = useState(() => {
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const dd = String(today.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  });
+  const [customCity, setCustomCity] = useState('Jakarta');
+  const [customDateTextOverride, setCustomDateTextOverride] = useState('');
+
+  const todayFormatted = useMemo(() => {
+    const today = new Date();
+    const months = [
+      'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+      'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+    ];
+    return `${today.getDate()} ${months[today.getMonth()]} ${today.getFullYear()}`;
+  }, []);
+
+  const effectivePrintDateText = useMemo(() => {
+    if (!useCustomPrintDate) return '';
+    if (customDateTextOverride.trim()) return customDateTextOverride.trim();
+    if (!customPrintDate) return '';
+    const parts = customPrintDate.split('-');
+    if (parts.length === 3) {
+      const year = parseInt(parts[0], 10);
+      const monthIdx = parseInt(parts[1], 10) - 1;
+      const day = parseInt(parts[2], 10);
+      const months = [
+        'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+        'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+      ];
+      if (!isNaN(year) && monthIdx >= 0 && monthIdx < 12 && !isNaN(day)) {
+        const cityPrefix = customCity.trim() ? `${customCity.trim()}, ` : '';
+        return `${cityPrefix}${day} ${months[monthIdx]} ${year}`;
+      }
+    }
+    return customPrintDate;
+  }, [useCustomPrintDate, customPrintDate, customCity, customDateTextOverride]);
+
   // Auto-trigger printing from URL query parameters (flawless print in new tab)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -79,8 +121,9 @@ export default function ReportsCenter({
     const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'https://fastify.nganjuk.net';
     const ta = encodeURIComponent(tahunAjaran || activePrintStudent.tahunajaran || '2025/2026');
     const endpoint = printMode === 'PTS' ? 'pts' : 'terpadu';
-    return `${apiBaseUrl}/api/rapor/print/${endpoint}/${activePrintStudent.nis}?tahunajaran=${ta}&jenis=${printMode}`;
-  }, [activePrintStudent, printMode, tahunAjaran]);
+    const dateParam = useCustomPrintDate && effectivePrintDateText ? `&tanggal=${encodeURIComponent(effectivePrintDateText)}` : '';
+    return `${apiBaseUrl}/api/rapor/print/${endpoint}/${activePrintStudent.nis}?tahunajaran=${ta}&jenis=${printMode}${dateParam}`;
+  }, [activePrintStudent, printMode, tahunAjaran, useCustomPrintDate, effectivePrintDateText]);
 
   // 1. Get list of classes and subjects for filtering
   const classesList = useMemo(() => {
@@ -608,6 +651,76 @@ export default function ReportsCenter({
                   </button>
                 </div>
 
+                {/* Custom Print Date Bar in Modal */}
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-2.5 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-bold text-slate-700 flex items-center gap-1.5">
+                      <Calendar className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Tanggal Cetak:</span>
+                    </span>
+
+                    <div className="inline-flex items-center bg-slate-200/90 p-0.5 rounded-lg border border-slate-300">
+                      <button
+                        type="button"
+                        onClick={() => setUseCustomPrintDate(false)}
+                        className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all cursor-pointer ${
+                          !useCustomPrintDate ? 'bg-white text-emerald-700 shadow-2xs' : 'text-slate-500'
+                        }`}
+                      >
+                        ⚡ Otomatis
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setUseCustomPrintDate(true)}
+                        className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all cursor-pointer ${
+                          useCustomPrintDate ? 'bg-white text-amber-700 shadow-2xs' : 'text-slate-500'
+                        }`}
+                      >
+                        ✏️ Custom
+                      </button>
+                    </div>
+                  </div>
+
+                  {!useCustomPrintDate ? (
+                    <div className="text-[10px] text-slate-500">
+                      Titimangsa: <span className="font-semibold text-slate-700">Jakarta, {todayFormatted}</span>
+                    </div>
+                  ) : (
+                    <div className="space-y-1.5 pt-1.5 border-t border-slate-200 animate-in fade-in duration-150">
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <div>
+                          <label className="block text-[9.5px] font-bold text-slate-500 mb-0.5">Tanggal</label>
+                          <input
+                            type="date"
+                            value={customPrintDate}
+                            onChange={(e) => {
+                              setCustomPrintDate(e.target.value);
+                              setCustomDateTextOverride('');
+                            }}
+                            className="w-full bg-white border border-slate-300 rounded px-2 py-1 text-[11px] text-slate-800 font-semibold"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[9.5px] font-bold text-slate-500 mb-0.5">Kota</label>
+                          <input
+                            type="text"
+                            placeholder="Jakarta"
+                            value={customCity}
+                            onChange={(e) => {
+                              setCustomCity(e.target.value);
+                              setCustomDateTextOverride('');
+                            }}
+                            className="w-full bg-white border border-slate-300 rounded px-2 py-1 text-[11px] text-slate-800 font-semibold"
+                          />
+                        </div>
+                      </div>
+                      <div className="text-[10px] font-bold text-amber-800 bg-amber-50 p-1.5 rounded border border-amber-200">
+                        Tertulis: "{effectivePrintDateText}"
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 <div className="space-y-4">
                   <div>
                     <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wider">
@@ -948,7 +1061,7 @@ export default function ReportsCenter({
                           <p className="font-bold">Orang Tua Wali</p>
                         </div>
                         <div className="text-center w-40">
-                          <p>Jakarta, 26 Juni 2026</p>
+                          <p>{effectivePrintDateText || `${customCity || 'Jakarta'}, ${todayFormatted}`}</p>
                           <p className="font-bold">Guru Terpadu {activePrintStudent.kelas}</p>
                         </div>
                       </div>
