@@ -149,6 +149,17 @@ export default function ReportsCenter({
     return subjects.filter(s => s.aktif === 1);
   }, [subjects]);
 
+  // Helper agar nilai huruf tidak terpotong 5 digit dan selalu terbilang penuh sama seperti PAS
+  const getDisplayNilaiHuruf = (huruf?: string, akhir?: number) => {
+    if (huruf && typeof huruf === 'string') {
+      const trimmed = huruf.trim();
+      if (trimmed.length > 5 && !/^\d+(\.\d+)?$/.test(trimmed) && trimmed.toLowerCase() !== 'nan') {
+        return trimmed;
+      }
+    }
+    return numberToWords(Number(akhir || 0));
+  };
+
   const subjectMap = useMemo(() => {
     const map: Record<number, string> = {};
     subjects.forEach(s => { map[s.replid] = s.nama; });
@@ -1021,7 +1032,7 @@ export default function ReportsCenter({
                               <td className="border border-slate-800 py-0.5 px-2 text-left font-extrabold">{subjectMap[g.idpelajaran] || `ID: ${g.idpelajaran}`}</td>
                               <td className="border border-slate-800 py-0.5 px-1 text-center">{g.kkm || 75}</td>
                               <td className="border border-slate-800 py-0.5 px-1 text-center font-bold">{g.nilaiakhir}</td>
-                              <td className="border border-slate-800 py-0.5 px-2 text-left text-[8px] capitalize">{g.nilaihuruf || numberToWords(g.nilaiakhir)}</td>
+                              <td className="border border-slate-800 py-0.5 px-2 text-left text-[8px] capitalize">{getDisplayNilaiHuruf(g.nilaihuruf, g.nilaiakhir)}</td>
                               <td className="border border-slate-800 py-0.5 px-1 text-center font-bold">{g.predikat || 'B'}</td>
                             </tr>
                           ))}
@@ -1279,7 +1290,7 @@ export default function ReportsCenter({
                       <td className="border border-black py-0.5 px-2 text-left font-extrabold">{subjectMap[g.idpelajaran] || `ID: ${g.idpelajaran}`}</td>
                       <td className="border border-black py-0.5 px-1 text-center">{g.kkm}</td>
                       <td className="border border-black py-0.5 px-1 text-center font-extrabold">{g.nilaiakhir}</td>
-                      <td className="border border-black py-0.5 px-2 text-left text-[9px] capitalize font-medium">{g.nilaihuruf || numberToWords(g.nilaiakhir)}</td>
+                      <td className="border border-black py-0.5 px-2 text-left text-[9px] capitalize font-medium">{getDisplayNilaiHuruf(g.nilaihuruf, g.nilaiakhir)}</td>
                       <td className="border border-black py-0.5 px-1 text-center font-bold">{g.predikat}</td>
                     </tr>
                   ))}
