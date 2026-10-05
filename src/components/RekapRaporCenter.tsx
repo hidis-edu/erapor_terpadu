@@ -46,6 +46,12 @@ export default function RekapRaporCenter({
   const [customCity, setCustomCity] = useState('Jakarta');
   const [customDateTextOverride, setCustomDateTextOverride] = useState('');
 
+  // Custom Header & Prakata Input Manual
+  const [useCustomHeader, setUseCustomHeader] = useState(false);
+  const [customHeaderJudul, setCustomHeaderJudul] = useState('');
+  const [customHeaderSubjudul, setCustomHeaderSubjudul] = useState('');
+  const [customHeaderPrakata, setCustomHeaderPrakata] = useState('');
+
   // Dropdown list holders
   const [classesList, setClassesList] = useState<string[]>([]);
   const [filteredStudents, setFilteredStudents] = useState<Student[]>([]);
@@ -80,6 +86,15 @@ export default function RekapRaporCenter({
     }
     return customPrintDate;
   }, [useCustomPrintDate, customPrintDate, customCity, customDateTextOverride]);
+
+  const headerQueryParams = React.useMemo(() => {
+    if (!useCustomHeader) return '';
+    let p = '';
+    if (customHeaderJudul.trim()) p += `&judul=${encodeURIComponent(customHeaderJudul.trim())}`;
+    if (customHeaderSubjudul.trim()) p += `&subjudul=${encodeURIComponent(customHeaderSubjudul.trim())}`;
+    if (customHeaderPrakata.trim()) p += `&prakata=${encodeURIComponent(customHeaderPrakata.trim())}`;
+    return p;
+  }, [useCustomHeader, customHeaderJudul, customHeaderSubjudul, customHeaderPrakata]);
 
   // States for sending via WhatsApp
   const [sendingItem, setSendingItem] = useState<RekapRapor | null>(null);
@@ -691,6 +706,132 @@ export default function RekapRaporCenter({
               </div>
             </div>
           )}
+
+          {/* Section 2: Kustomisasi Header & Input Manual Prakata */}
+          <div className="mt-3 pt-3 border-t border-slate-200/80">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
+                  <BookOpen className="w-4 h-4" />
+                </div>
+                <span className="text-xs font-bold text-slate-800">Header & Prakata Manual Cetak:</span>
+                
+                {/* Segmented Switcher Pill */}
+                <div className="inline-flex items-center bg-slate-200/90 p-0.5 rounded-xl border border-slate-300">
+                  <button
+                    type="button"
+                    onClick={() => setUseCustomHeader(false)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      !useCustomHeader
+                        ? 'bg-white text-emerald-700 shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    ⚡ Header Standar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setUseCustomHeader(true)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      useCustomHeader
+                        ? 'bg-white text-amber-700 shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    ✏️ Kustom Header & Prakata
+                  </button>
+                </div>
+              </div>
+
+              {/* Status Header */}
+              <div>
+                {!useCustomHeader ? (
+                  <div className="text-[11px] text-slate-500 font-medium">
+                    Kop: <span className="font-bold text-slate-700">{modeRekap === 'PTS' ? 'RAPOR PENILAIAN TENGAH SEMESTER (PTS)' : 'RAPOR PENILAIAN AKHIR SEMESTER'}</span> • <span className="font-semibold text-slate-600">TERPADU</span>
+                  </div>
+                ) : (
+                  <div className="inline-flex items-center gap-1.5 text-[11px] font-bold text-emerald-900 bg-emerald-100/90 px-3 py-1 rounded-xl border border-emerald-300">
+                    <span>✨ Header Kustom Aktif</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Inputs ketika Kustom Header & Prakata aktif */}
+            {useCustomHeader && (
+              <div className="mt-3 pt-3 border-t border-slate-200 space-y-3 animate-in fade-in slide-in-from-top-1 duration-150">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                      Judul Utama Rapor (Kop Baris 1)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder={modeRekap === 'PTS' ? 'RAPOR PENILAIAN TENGAH SEMESTER (PTS)' : 'RAPOR PENILAIAN SUMATIF AKHIR SEMESTER'}
+                      value={customHeaderJudul}
+                      onChange={(e) => setCustomHeaderJudul(e.target.value)}
+                      className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800 font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500 shadow-2xs"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                      Subjudul / Keterangan (Kop Baris 2)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="TERPADU / LAPORAN HASIL CAPAIAN BELAJAR"
+                      value={customHeaderSubjudul}
+                      onChange={(e) => setCustomHeaderSubjudul(e.target.value)}
+                      className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800 font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500 shadow-2xs"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider">
+                      Input Manual Teks Prakata / Kata Pengantar Rapor
+                    </label>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-[9.5px] text-slate-400 font-medium">Template Cepat:</span>
+                      <button
+                        type="button"
+                        onClick={() => setCustomHeaderPrakata('Laporan capaian kompetensi tengah semester sebagai sarana evaluasi dan kolaborasi pendidikan antara sekolah dan orang tua murid.')}
+                        className="text-[9.5px] font-bold text-emerald-700 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100 px-2 py-0.5 rounded cursor-pointer transition-all border border-emerald-200"
+                      >
+                        Prakata PTS
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCustomHeaderPrakata('Berikut disajikan laporan perkembangan hasil belajar dan pembentukan karakter peserta didik.')}
+                        className="text-[9.5px] font-bold text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded cursor-pointer transition-all border border-blue-200"
+                      >
+                        Prakata Evaluasi
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCustomHeaderPrakata('')}
+                        className="text-[9.5px] font-bold text-slate-500 hover:text-slate-700 bg-slate-100 hover:bg-slate-200 px-1.5 py-0.5 rounded cursor-pointer transition-all"
+                      >
+                        Kosongkan
+                      </button>
+                    </div>
+                  </div>
+                  <textarea
+                    rows={2}
+                    placeholder="Contoh: Dengan memanjatkan puji syukur ke hadirat Allah SWT, berikut disajikan laporan evaluasi capaian belajar siswa pada pertengahan semester ini..."
+                    value={customHeaderPrakata}
+                    onChange={(e) => setCustomHeaderPrakata(e.target.value)}
+                    className="w-full bg-white border border-slate-300 rounded-xl p-2.5 text-xs text-slate-800 font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500 shadow-2xs leading-relaxed"
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1 italic">
+                    * Teks prakata manual ini akan dicetak rapi di bagian header lembar rapor (di bawah data identitas siswa) sebagai kata pengantar resmi.
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Filters */}
@@ -844,7 +985,7 @@ export default function RekapRaporCenter({
                           ) : (
                             <div className="flex items-center justify-center gap-1">
                               <a
-                                href={`${import.meta.env.VITE_API_BASE_URL || 'https://fastify.nganjuk.net'}/api/rapor/print/${modeRekap === 'PTS' ? 'pts' : 'terpadu'}/${item.nis}?tahunajaran=${encodeURIComponent(item.tahunajaran || activeTahunAjaran || '2025/2026')}&jenis=${modeRekap}${useCustomPrintDate && effectivePrintDateText ? `&tanggal=${encodeURIComponent(effectivePrintDateText)}` : ''}`}
+                                href={`${import.meta.env.VITE_API_BASE_URL || 'https://fastify.nganjuk.net'}/api/rapor/print/${modeRekap === 'PTS' ? 'pts' : 'terpadu'}/${item.nis}?tahunajaran=${encodeURIComponent(item.tahunajaran || activeTahunAjaran || '2025/2026')}&jenis=${modeRekap}${useCustomPrintDate && effectivePrintDateText ? `&tanggal=${encodeURIComponent(effectivePrintDateText)}` : ''}${headerQueryParams}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className={`p-1.5 rounded-lg transition-all inline-flex items-center justify-center cursor-pointer ${
