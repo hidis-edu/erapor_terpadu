@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { 
   Search, FileSpreadsheet, FileText, Printer, Filter, X, 
-  ArrowUpDown, CheckCircle, GraduationCap, Calendar, Settings
+  ArrowUpDown, CheckCircle, GraduationCap, Calendar, Settings, BookOpen
 } from 'lucide-react';
 import { Grade, Personality, Student, Subject, Attendance } from '../types';
 import { handleExportExcel, handleExportPDF, numberToWords } from '../data';
@@ -54,6 +54,12 @@ export default function ReportsCenter({
   const [customCity, setCustomCity] = useState('Jakarta');
   const [customDateTextOverride, setCustomDateTextOverride] = useState('');
 
+  // Custom Header & Manual Prakata States
+  const [useCustomHeader, setUseCustomHeader] = useState(false);
+  const [customHeaderJudul, setCustomHeaderJudul] = useState('');
+  const [customHeaderSubjudul, setCustomHeaderSubjudul] = useState('');
+  const [customHeaderPrakata, setCustomHeaderPrakata] = useState('');
+
   const todayFormatted = useMemo(() => {
     const today = new Date();
     const months = [
@@ -83,6 +89,15 @@ export default function ReportsCenter({
     }
     return customPrintDate;
   }, [useCustomPrintDate, customPrintDate, customCity, customDateTextOverride]);
+
+  const headerParams = useMemo(() => {
+    if (!useCustomHeader) return '';
+    let p = '';
+    if (customHeaderJudul.trim()) p += `&judul=${encodeURIComponent(customHeaderJudul.trim())}`;
+    if (customHeaderSubjudul.trim()) p += `&subjudul=${encodeURIComponent(customHeaderSubjudul.trim())}`;
+    if (customHeaderPrakata.trim()) p += `&prakata=${encodeURIComponent(customHeaderPrakata.trim())}`;
+    return p;
+  }, [useCustomHeader, customHeaderJudul, customHeaderSubjudul, customHeaderPrakata]);
 
   // Auto-trigger printing from URL query parameters (flawless print in new tab)
   useEffect(() => {
@@ -122,8 +137,8 @@ export default function ReportsCenter({
     const ta = encodeURIComponent(tahunAjaran || activePrintStudent.tahunajaran || '2025/2026');
     const endpoint = printMode === 'PTS' ? 'pts' : 'terpadu';
     const dateParam = useCustomPrintDate && effectivePrintDateText ? `&tanggal=${encodeURIComponent(effectivePrintDateText)}` : '';
-    return `${apiBaseUrl}/api/rapor/print/${endpoint}/${activePrintStudent.nis}?tahunajaran=${ta}&jenis=${printMode}${dateParam}`;
-  }, [activePrintStudent, printMode, tahunAjaran, useCustomPrintDate, effectivePrintDateText]);
+    return `${apiBaseUrl}/api/rapor/print/${endpoint}/${activePrintStudent.nis}?tahunajaran=${ta}&jenis=${printMode}${dateParam}${headerParams}`;
+  }, [activePrintStudent, printMode, tahunAjaran, useCustomPrintDate, effectivePrintDateText, headerParams]);
 
   // 1. Get list of classes and subjects for filtering
   const classesList = useMemo(() => {
@@ -721,6 +736,85 @@ export default function ReportsCenter({
                   )}
                 </div>
 
+                {/* Custom Header & Manual Prakata Bar in Modal */}
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-2.5 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-bold text-slate-700 flex items-center gap-1.5">
+                      <BookOpen className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Header & Prakata:</span>
+                    </span>
+
+                    <div className="inline-flex items-center bg-slate-200/90 p-0.5 rounded-lg border border-slate-300">
+                      <button
+                        type="button"
+                        onClick={() => setUseCustomHeader(false)}
+                        className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all cursor-pointer ${
+                          !useCustomHeader ? 'bg-white text-emerald-700 shadow-2xs' : 'text-slate-500'
+                        }`}
+                      >
+                        ⚡ Standar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setUseCustomHeader(true)}
+                        className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all cursor-pointer ${
+                          useCustomHeader ? 'bg-white text-amber-700 shadow-2xs' : 'text-slate-500'
+                        }`}
+                      >
+                        ✏️ Kustom
+                      </button>
+                    </div>
+                  </div>
+
+                  {!useCustomHeader ? (
+                    <div className="text-[10px] text-slate-500">
+                      Kop: <span className="font-semibold text-slate-700">{printMode === 'PTS' ? 'RAPOR PTS' : 'RAPOR PAS'}</span> • <span className="text-slate-600">TERPADU</span>
+                    </div>
+                  ) : (
+                    <div className="space-y-2 pt-1.5 border-t border-slate-200 animate-in fade-in duration-150">
+                      <div>
+                        <label className="block text-[9.5px] font-bold text-slate-500 mb-0.5">Judul Utama Rapor</label>
+                        <input
+                          type="text"
+                          placeholder={printMode === 'PTS' ? 'RAPOR PENILAIAN TENGAH SEMESTER (PTS)' : 'RAPOR PENILAIAN SUMATIF AKHIR SEMESTER'}
+                          value={customHeaderJudul}
+                          onChange={(e) => setCustomHeaderJudul(e.target.value)}
+                          className="w-full bg-white border border-slate-300 rounded px-2 py-1 text-[11px] text-slate-800 font-semibold"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[9.5px] font-bold text-slate-500 mb-0.5">Subjudul / Keterangan</label>
+                        <input
+                          type="text"
+                          placeholder="TERPADU / LAPORAN HASIL CAPAIAN BELAJAR"
+                          value={customHeaderSubjudul}
+                          onChange={(e) => setCustomHeaderSubjudul(e.target.value)}
+                          className="w-full bg-white border border-slate-300 rounded px-2 py-1 text-[11px] text-slate-800 font-semibold"
+                        />
+                      </div>
+                      <div>
+                        <div className="flex items-center justify-between mb-0.5">
+                          <label className="block text-[9.5px] font-bold text-slate-500">Teks Prakata / Pengantar Manual</label>
+                          <button
+                            type="button"
+                            onClick={() => setCustomHeaderPrakata('Laporan capaian kompetensi tengah semester sebagai sarana evaluasi dan kolaborasi pendidikan antara sekolah dan orang tua murid.')}
+                            className="text-[9px] font-bold text-emerald-700 hover:underline"
+                          >
+                            + Template PTS
+                          </button>
+                        </div>
+                        <textarea
+                          rows={2}
+                          placeholder="Tuliskan teks prakata atau pengantar manual di sini..."
+                          value={customHeaderPrakata}
+                          onChange={(e) => setCustomHeaderPrakata(e.target.value)}
+                          className="w-full bg-white border border-slate-300 rounded px-2 py-1 text-[11px] text-slate-800 font-semibold leading-relaxed"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 <div className="space-y-4">
                   <div>
                     <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wider">
@@ -840,10 +934,14 @@ export default function ReportsCenter({
                       {/* Heading */}
                       <div className="text-center font-bold tracking-normal mb-2 border-b border-slate-200 pb-1">
                         <h1 className="text-xs font-extrabold text-slate-900 uppercase">
-                          {printMode === 'PTS' ? 'RAPOR PENILAIAN TENGAH SEMESTER (PTS)' : 'RAPOR PENILAIAN SUMATIF AKHIR SEMESTER'}
+                          {useCustomHeader && customHeaderJudul.trim()
+                            ? customHeaderJudul.trim().toUpperCase()
+                            : (printMode === 'PTS' ? 'RAPOR PENILAIAN TENGAH SEMESTER (PTS)' : 'RAPOR PENILAIAN SUMATIF AKHIR SEMESTER')}
                         </h1>
                         <h2 className="text-[9.5px] font-bold text-slate-900 uppercase mt-0.5">
-                          TERPADU
+                          {useCustomHeader && customHeaderSubjudul.trim()
+                            ? customHeaderSubjudul.trim().toUpperCase()
+                            : 'TERPADU'}
                         </h2>
                         <h3 className="text-[9.5px] font-bold text-slate-900 uppercase mt-0.5">
                           SDI HIDAYATUL ISLAMIYAH
@@ -890,6 +988,16 @@ export default function ReportsCenter({
                           </div>
                         </div>
                       </div>
+
+                      {/* Teks Prakata Manual Header */}
+                      {useCustomHeader && customHeaderPrakata.trim() && (
+                        <div className="mb-2 p-2 bg-slate-50 border-l-[3px] border-[#4a6b53] rounded text-[8.5px] italic text-slate-800 leading-relaxed">
+                          <span className="font-extrabold not-italic uppercase text-[8px] text-[#1a4d2e] block mb-0.5">
+                            📌 Prakata / Catatan Pengantar:
+                          </span>
+                          "{customHeaderPrakata.trim()}"
+                        </div>
+                      )}
 
                       {/* Grades Table (SAMA PERSIS PTS & PAS) */}
                       <table className="w-full text-left border-collapse border border-slate-800 text-[9px] text-slate-900">
