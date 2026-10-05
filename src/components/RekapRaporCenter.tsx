@@ -34,9 +34,52 @@ export default function RekapRaporCenter({
   const [searchQuery, setSearchQuery] = useState('');
   const [filterClass, setFilterClass] = useState('');
 
+  // Custom Print Date Toggle & Controls
+  const [useCustomPrintDate, setUseCustomPrintDate] = useState(false);
+  const [customPrintDate, setCustomPrintDate] = useState(() => {
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const dd = String(today.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  });
+  const [customCity, setCustomCity] = useState('Jakarta');
+  const [customDateTextOverride, setCustomDateTextOverride] = useState('');
+
   // Dropdown list holders
   const [classesList, setClassesList] = useState<string[]>([]);
   const [filteredStudents, setFilteredStudents] = useState<Student[]>([]);
+
+  // Calculate formatted Indonesian dates
+  const todayFormatted = React.useMemo(() => {
+    const today = new Date();
+    const months = [
+      'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+      'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+    ];
+    return `${today.getDate()} ${months[today.getMonth()]} ${today.getFullYear()}`;
+  }, []);
+
+  const effectivePrintDateText = React.useMemo(() => {
+    if (!useCustomPrintDate) return '';
+    if (customDateTextOverride.trim()) return customDateTextOverride.trim();
+    if (!customPrintDate) return '';
+    const parts = customPrintDate.split('-');
+    if (parts.length === 3) {
+      const year = parseInt(parts[0], 10);
+      const monthIdx = parseInt(parts[1], 10) - 1;
+      const day = parseInt(parts[2], 10);
+      const months = [
+        'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+        'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+      ];
+      if (!isNaN(year) && monthIdx >= 0 && monthIdx < 12 && !isNaN(day)) {
+        const cityPrefix = customCity.trim() ? `${customCity.trim()}, ` : '';
+        return `${cityPrefix}${day} ${months[monthIdx]} ${year}`;
+      }
+    }
+    return customPrintDate;
+  }, [useCustomPrintDate, customPrintDate, customCity, customDateTextOverride]);
 
   // States for sending via WhatsApp
   const [sendingItem, setSendingItem] = useState<RekapRapor | null>(null);
@@ -549,6 +592,107 @@ export default function RekapRaporCenter({
           </div>
         </div>
 
+        {/* Bar Pengaturan & Toggle Custom Tanggal Print */}
+        <div className="bg-slate-50/90 border border-slate-200/90 rounded-2xl p-3.5 mb-4 shadow-2xs">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0">
+                <Calendar className="w-4 h-4" />
+              </div>
+              <span className="text-xs font-bold text-slate-800">Tanggal Titimangsa Lembar Rapor:</span>
+              
+              {/* Segmented Switcher Pill */}
+              <div className="inline-flex items-center bg-slate-200/90 p-0.5 rounded-xl border border-slate-300">
+                <button
+                  type="button"
+                  onClick={() => setUseCustomPrintDate(false)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    !useCustomPrintDate
+                      ? 'bg-white text-emerald-700 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  ⚡ Otomatis (Hari Ini)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setUseCustomPrintDate(true)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    useCustomPrintDate
+                      ? 'bg-white text-amber-700 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  ✏️ Manual / Custom Tanggal
+                </button>
+              </div>
+            </div>
+
+            {/* Preview Status */}
+            <div>
+              {!useCustomPrintDate ? (
+                <div className="text-[11px] text-slate-500 font-medium">
+                  Default otomatis: <span className="font-bold text-slate-700">Jakarta, {todayFormatted}</span>
+                </div>
+              ) : (
+                <div className="inline-flex items-center gap-1.5 text-[11px] font-bold text-amber-900 bg-amber-100/90 px-3 py-1 rounded-xl border border-amber-300">
+                  <span>📅 Cetak Tertulis:</span>
+                  <span className="font-extrabold underline">{effectivePrintDateText || 'Belum diatur'}</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Form input ketika mode Custom Tanggal aktif */}
+          {useCustomPrintDate && (
+            <div className="mt-3 pt-3 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-3 gap-3 animate-in fade-in slide-in-from-top-1 duration-150">
+              <div>
+                <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                  1. Pilih Kalender Tanggal
+                </label>
+                <input
+                  type="date"
+                  value={customPrintDate}
+                  onChange={(e) => {
+                    setCustomPrintDate(e.target.value);
+                    setCustomDateTextOverride('');
+                  }}
+                  className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800 font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500 cursor-pointer shadow-2xs"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                  2. Nama Kota Tempat Tanda Tangan
+                </label>
+                <input
+                  type="text"
+                  placeholder="Contoh: Jakarta / Jakarta Timur"
+                  value={customCity}
+                  onChange={(e) => {
+                    setCustomCity(e.target.value);
+                    setCustomDateTextOverride('');
+                  }}
+                  className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800 font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500 shadow-2xs"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                  3. Atau Ketik Manual Penuh
+                </label>
+                <input
+                  type="text"
+                  placeholder="Contoh: Jakarta, 28 Maret 2026"
+                  value={customDateTextOverride}
+                  onChange={(e) => setCustomDateTextOverride(e.target.value)}
+                  className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800 font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500 shadow-2xs"
+                />
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* Filters */}
         <div className="flex flex-col md:flex-row gap-3 mb-4">
           <div className="flex-1 relative">
@@ -700,7 +844,7 @@ export default function RekapRaporCenter({
                           ) : (
                             <div className="flex items-center justify-center gap-1">
                               <a
-                                href={`${import.meta.env.VITE_API_BASE_URL || 'https://fastify.nganjuk.net'}/api/rapor/print/${modeRekap === 'PTS' ? 'pts' : 'terpadu'}/${item.nis}?tahunajaran=${encodeURIComponent(item.tahunajaran || activeTahunAjaran || '2025/2026')}&jenis=${modeRekap}`}
+                                href={`${import.meta.env.VITE_API_BASE_URL || 'https://fastify.nganjuk.net'}/api/rapor/print/${modeRekap === 'PTS' ? 'pts' : 'terpadu'}/${item.nis}?tahunajaran=${encodeURIComponent(item.tahunajaran || activeTahunAjaran || '2025/2026')}&jenis=${modeRekap}${useCustomPrintDate && effectivePrintDateText ? `&tanggal=${encodeURIComponent(effectivePrintDateText)}` : ''}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className={`p-1.5 rounded-lg transition-all inline-flex items-center justify-center cursor-pointer ${
