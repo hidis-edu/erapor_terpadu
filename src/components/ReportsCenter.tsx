@@ -237,21 +237,22 @@ export default function ReportsCenter({
   }, [students, grades, tahunAjaran]);
 
   const printClassesList = useMemo(() => {
-    return Array.from(new Set(printableList.map(s => s.kelas))).sort();
-  }, [printableList]);
+    const classes = students.map(s => s.kelas).filter(Boolean);
+    return Array.from(new Set(classes)).sort();
+  }, [students]);
 
   const filteredPrintableStudents = useMemo(() => {
     if (!printSelectedClass) return [];
-    return printableList.filter(s => s.kelas === printSelectedClass);
-  }, [printableList, printSelectedClass]);
+    return students.filter(s => s.kelas === printSelectedClass);
+  }, [students, printSelectedClass]);
 
   const activePrintGrades = useMemo(() => {
     return grades.filter(g => 
       String(g.nis) === String(printNis) && 
       (printMode === 'PTS' ? g.jenis === 'PTS' : (g.jenis === 'PAS' || !g.jenis)) &&
-      (!g.tahunajaran || !tahunAjaran || g.tahunajaran === tahunAjaran)
+      (!g.tahunajaran || !tahunAjaran || g.tahunajaran === tahunAjaran || (activePrintStudent?.tahunajaran && g.tahunajaran === activePrintStudent.tahunajaran))
     );
-  }, [printNis, grades, tahunAjaran, printMode]);
+  }, [printNis, grades, tahunAjaran, printMode, activePrintStudent]);
 
   const activePrintPersonality = useMemo(() => {
     return personalities.find(p => p.nis === printNis);
