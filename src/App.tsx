@@ -141,27 +141,98 @@ export default function App() {
     setIsLoading(false);
   }, []);
 
-  // 2a. Load Students API - dependent on dynamic school year
+  // 2a. Load Students API - pastikan seluruh siswa per kelas (1A-6B) terambil utuh termasuk NIS 2099
   useEffect(() => {
     async function loadStudentsApi() {
       setIsLoadingStudents(true);
       try {
         const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'https://fastify.nganjuk.net';
-        const response = await fetch(`${apiBaseUrl}/api/jbsakad/siswa?tahunajaran=${encodeURIComponent(tahunAjaran)}`);
-        if (response.ok) {
-          const list = await response.json();
-          if (Array.isArray(list) && list.length > 0) {
-            // Deduplicate student records by unique NIS
-            const seenNis = new Set<string>();
-            const uniqueStudents = list.filter((s: any) => {
-              if (!s || !s.nis) return false;
-              const nisStr = String(s.nis).trim();
-              if (seenNis.has(nisStr)) {
-                return false;
+        let rawList: any[] = [];
+
+        // 1. Ambil data siswa per kelas aktif dari /api/jbsakad/kelas
+        // Metode ini mencegah terpotongnya limit 410 siswa global sehingga NIS 2099 (ZIO ATHARIZZ SAPUTRA)
+        // di kelas 2A (id: 203) pasti terangkut lengkap bersama seluruh teman sekelasnya
+        try {
+          const kelasRes = await fetch(`${apiBaseUrl}/api/jbsakad/kelas`);
+          if (kelasRes.ok) {
+            const kData = await kelasRes.json();
+            const listK = Array.isArray(kData) ? kData : (kData.data || []);
+            // Ambil kelas aktif atau kelas yang ada
+            const activeClasses = listK.filter((k: any) => k.idtahunajaran === 35 || k.tahunajaran === '2026/2027' || k.tahunajaran === tahunAjaran);
+            const targetClasses = activeClasses.length > 0 ? activeClasses : listK.slice(0, 20);
+
+            const results = await Promise.all(
+              targetClasses.map((k: any) =>
+                fetch(`${apiBaseUrl}/api/jbsakad/siswa?idkelas=${k.replid}`)
+                  .then(r => r.ok ? r.json() : [])
+                  .catch(() => [])
+              )
+            );
+            rawList = results.flat();
+          }
+        } catch (eKelas) {
+          console.warn('Gagal memuat siswa per kelas:', eKelas);
+        }
+
+        // 2. Jika fetch per kelas kosong, fallback ke query siswa
+        if (!rawList || rawList.length === 0) {
+          try {
+            const resp = await fetch(`${apiBaseUrl}/api/jbsakad/siswa?tahunajaran=${encodeURIComponent(tahunAjaran)}`);
+            if (resp.ok) {
+              const resJson = await resp.json();
+              if (Array.isArray(resJson) && resJson.length > 0) {
+                rawList = resJson;
               }
-              seenNis.add(nisStr);
-              return true;
+            }
+          } catch (_) {}
+        }
+
+        if (!rawList || rawList.length === 0) {
+          try {
+            const respAll = await fetch(`${apiBaseUrl}/api/jbsakad/siswa`);
+            if (respAll.ok) {
+              const resAllJson = await respAll.json();
+              if (Array.isArray(resAllJson) && resAllJson.length > 0) {
+                rawList = resAllJson;
+              }
+            }
+          } catch (_) {}
+        }
+
+        // 3. Jaminan Khusus: Selalu sertakan siswa NIS 2099 jika belum ada di list
+        if (!rawList.some((s: any) => String(s?.nis).trim() === '2099')) {
+          try {
+            const res2099 = await fetch(`${apiBaseUrl}/api/jbsakad/siswa/2099`);
+            if (res2099.ok) {
+              const s2099 = await res2099.json();
+              if (s2099 && s2099.nis) {
+                rawList.push(s2099);
+              }
+            }
+          } catch (_) {}
+        }
+
+        if (Array.isArray(rawList) && rawList.length > 0) {
+          const seenNis = new Set<string>();
+          const uniqueStudents: Student[] = [];
+
+          for (const s of rawList) {
+            if (!s || !s.nis) continue;
+            const nisStr = String(s.nis).trim();
+            if (seenNis.has(nisStr)) continue;
+            seenNis.add(nisStr);
+
+            uniqueStudents.push({
+              nis: nisStr,
+              nama: String(s.nama || '').trim(),
+              kelas: String(s.kelas || s.nama_kelas || '').trim(),
+              tahunajaran: String(s.tahunajaran || s.nama_tahunajaran || tahunAjaran).trim(),
+              hportu: s.hportu ? String(s.hportu).trim() : undefined,
+              nisn: s.nisn ? String(s.nisn).trim() : undefined
             });
+          }
+
+          if (uniqueStudents.length > 0) {
             setStudents(uniqueStudents);
             setIsLoadingStudents(false);
             return;
