@@ -27,6 +27,8 @@ export const FALLBACK_STUDENTS: Student[] = [
   { nis: '10298', nama: 'Hafizuddin Al-Ayub', kelas: '1B', tahunajaran: '2025/2026', hportu: '6285749455118' },
   
   // Kelas 2
+  { nis: '2099', nama: 'ZIO ATHARIZZ SAPUTRA', kelas: '2A', tahunajaran: '2025/2026', hportu: '089602785076', nisn: '3183713365' },
+  { nis: '2098', nama: 'ZALFAASHA EL QUINZHA', kelas: '2A', tahunajaran: '2025/2026', hportu: '081290000113', nisn: '3188481352' },
   { nis: '10299', nama: 'Indah Lestari', kelas: '2A', tahunajaran: '2025/2026', hportu: '6285749455119' },
   { nis: '10300', nama: 'Joko Susilo', kelas: '2A', tahunajaran: '2025/2026', hportu: '6285749455120' },
   { nis: '10301', nama: 'Kanza Khairunnisa', kelas: '2A', tahunajaran: '2025/2026', hportu: '6285749455121' },
